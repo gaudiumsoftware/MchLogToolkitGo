@@ -11,6 +11,9 @@ const (
 	InfoLevel  = "INFO"
 	WarnLevel  = "WARN"
 	ErrorLevel = "ERROR"
+
+	DebugPath = "./applog/"
+	ProdPath  = "/applog/"
 )
 
 // Logger é a estrutura que encapsula as funcionalidades de log da aplicação
@@ -34,7 +37,11 @@ func NewLogger(service, level string) (*Logger, error) {
 		return nil, errors.New("level is invalid")
 	}
 
-	mchlogcore.InitializeMchLog(filepath.Join("./applog/", service))
+	path := DebugPath
+	if level != DebugLevel {
+		path = ProdPath
+	}
+	mchlogcore.InitializeMchLog(filepath.Join(path, service))
 	return &Logger{log: mchlogcore.MchLog, service: service, level: level}, nil
 }
 
