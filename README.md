@@ -1,6 +1,13 @@
 # MchLogToolkitGo
 Ferramenta de log para Go do sistema Machine.
 
+## Recursos disponíveis na ferramenta
+- **Níveis de log**: INFO, DEBUG, WARN e ERROR.
+- **Criação de arquivos de log**: cria arquivos de log no formato JSON.
+- **Criação de arquivos de log por nível**: cria arquivos de log separados por nível.
+- **Criação de arquivos de log separados por hora**: cria arquivos de log separados por hora.
+- **Criação de diretório padrão para arquivos de log**: os logs são sempre salvos em /applog/<nome-do-serviço>.
+
 ## Utilização nos serviços da Machine
 Adiciona o módulo no projeto go com o comando:
 ```bash
