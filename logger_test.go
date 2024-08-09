@@ -46,6 +46,35 @@ func TestSetPath(t *testing.T) {
 	assertPanic(t, func() { logger.SetPath("") })
 }
 
+func TestLogMethods(t *testing.T) {
+	serviceName := "test-service"
+	logger, err := NewLogger(serviceName, DebugLevel)
+	if err != nil {
+		t.Errorf("error creating logger: %v", err)
+	}
+	logger.SetPath(DebugPath)
+	logger.Initialize()
+
+	t.Run(DebugLevel, func(t *testing.T) {
+		logger.Debug("debug message")
+		//TODO: checar se o log foi gravado no diretório correto e excluir arquivo após teste
+	})
+
+	t.Run(InfoLevel, func(t *testing.T) {
+		logger.Info("info message")
+	})
+
+	t.Run(WarnLevel, func(t *testing.T) {
+		logger.Warn("warn message")
+	})
+
+	t.Run(ErrorLevel, func(t *testing.T) {
+		logger.Error("error message")
+	})
+
+	//TODO: excuir arquivos e pastas após teste
+}
+
 func assertPanic(t *testing.T, f func()) {
 	defer func() {
 		if r := recover(); r == nil {
