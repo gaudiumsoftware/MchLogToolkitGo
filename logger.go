@@ -52,6 +52,10 @@ func (l *Logger) Initialize() {
 // SetPath define o caminho onde os logs serão armazenados
 // **deve ser chamado antes de chamar o método Initialize**.
 func (l *Logger) SetPath(path string) {
+	if path == "" {
+		panic("path cannot be empty")
+	}
+
 	l.path = path
 }
 

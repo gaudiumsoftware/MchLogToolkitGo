@@ -42,4 +42,15 @@ func TestSetPath(t *testing.T) {
 	if logger.path != "test-path" {
 		t.Errorf("path is invalid")
 	}
+
+	assertPanic(t, func() { logger.SetPath("") })
+}
+
+func assertPanic(t *testing.T, f func()) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("panic was expected")
+		}
+	}()
+	f()
 }
