@@ -31,3 +31,15 @@ func TestInvalidLoggerFields(t *testing.T) {
 		t.Errorf("error was expected")
 	}
 }
+
+func TestSetPath(t *testing.T) {
+	logger, err := NewLogger("test-service", DebugLevel)
+	if err != nil {
+		t.Errorf("error creating logger: %v", err)
+	}
+
+	logger.SetPath("test-path")
+	if logger.path != "test-path" {
+		t.Errorf("path is invalid")
+	}
+}
