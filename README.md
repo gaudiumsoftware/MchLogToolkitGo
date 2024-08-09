@@ -34,6 +34,16 @@ Inicializa o logger no código para utilização:
 ```go
 const serviceName = "service-name"
 logger := mchlogtoolkitgo.NewLogger(serviceName, level)
+logger.Initialize()
+```
+Dessa forma, os logs serão gravados por padrão no diretório /applog/service-name/*
+
+Para alterar o diretório de logs, utilize o método SetPath:
+```go
+const serviceName = "service-name"
+logger := mchlogtoolkitgo.NewLogger(serviceName, level)
+logger.SetPath("/path/to/logs")
+logger.Initialize()
 ```
 
 Utiliza o logger para logar mensagens:

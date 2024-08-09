@@ -54,7 +54,7 @@ mchlogcore.MchLog.LogSubject("teste", a, errors.New("isto é um erro forçado"))
 */
 
 const (
-	ccLogDataHora         string = "data_hora"  //chave ref. ao timestamp, gravada automaticamente no json de log
+	ccLogDataHora         string = "timestamp"  //chave ref. ao timestamp, gravada automaticamente no json de log
 	ccDateTimeMask        string = "2006010215" //YYYYMMDDHH - timestamp que define a rotação dos arquivos de log
 	ccLogFileSuffix       string = ".log"       //sufixo do arquivo de log
 	ccLogErrPrefixSubject string = "err_"       //prefixo do arquivo de log de erro
