@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"gaudium.com.br/gaudiumsoftware/MchLogToolkitGo/mchlogcore"
-	"path/filepath"
 	"runtime"
 	"strconv"
 )
@@ -21,7 +20,7 @@ const (
 
 // Logger é a estrutura que encapsula as funcionalidades de log da aplicação
 type Logger struct {
-	log         mchlogcore.LogType
+	log         *mchlogcore.LogType
 	path        string
 	service     string
 	level       string
@@ -41,12 +40,13 @@ func NewLogger(service, level string) (*Logger, error) {
 		return nil, errors.New("level is invalid")
 	}
 
-	return &Logger{log: mchlogcore.MchLog, path: ProdPath, service: service, level: level}, nil
+	return &Logger{log: nil, path: ProdPath, service: service, level: level}, nil
 }
 
 // Initialize inicializa o logger
 func (l *Logger) Initialize() {
-	mchlogcore.InitializeMchLog(filepath.Join(l.path, l.service))
+	mchlogcore.InitializeMchLog(l.path + l.service + "/")
+	l.log = &mchlogcore.MchLog
 }
 
 // SetPath define o caminho onde os logs serão armazenados
@@ -100,7 +100,7 @@ func (l *Logger) Error(message string) {
 		panic("error formatting log message")
 	}
 
-	l.log.LogSubject(DebugLevel, byteMessage, nil)
+	l.log.LogSubject(ErrorLevel, byteMessage, nil)
 }
 
 func formatLog(message, level string) []byte {
