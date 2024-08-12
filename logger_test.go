@@ -115,7 +115,7 @@ func TestInvalidMessage(t *testing.T) {
 	logger.SetPath(DebugPath)
 	logger.Initialize()
 
-	//TODO
+	//TODO: testar mensagens inválidas para causar panic
 }
 
 func removeLogFiles(path string) {

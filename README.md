@@ -46,6 +46,11 @@ logger.SetPath("/path/to/logs")
 logger.Initialize()
 ```
 
+O nível pode ser setado também posteriormente coma função SetLevel:
+```go
+logger.SetLevel(mchlogtoolkitgo.DbugLevel)
+```
+
 Utiliza o logger para logar mensagens:
 ```go
 logger.Info("mensagem de informação")
