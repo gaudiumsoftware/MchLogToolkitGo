@@ -1,6 +1,7 @@
 package MchLogToolkitGo
 
 import (
+	"encoding/json"
 	"os"
 	"testing"
 )
@@ -106,7 +107,7 @@ func TestLogMethods(t *testing.T) {
 	}
 }
 
-func TestInvalidMessage(t *testing.T) {
+func TestInvalidMessages(t *testing.T) {
 	logger, err := NewLogger("test-service", DebugLevel)
 	if err != nil {
 		t.Errorf("error creating logger: %v", err)
@@ -115,7 +116,21 @@ func TestInvalidMessage(t *testing.T) {
 	logger.SetPath(DebugPath)
 	logger.Initialize()
 
-	//TODO: testar mensagens inválidas para causar panic
+	levelFunctions := map[string]func(string){
+		DebugLevel: logger.Debug,
+		InfoLevel:  logger.Info,
+		WarnLevel:  logger.Warn,
+		ErrorLevel: logger.Error,
+	}
+	for level, levelMethod := range levelFunctions {
+		t.Run(level, func(t *testing.T) {
+			if err = logger.SetLevel(level); err != nil {
+				t.Errorf("error setting level: %v", err)
+			}
+
+			assertPanic(t, func() { levelMethod("") })
+		})
+	}
 }
 
 func removeLogFiles(path string) {
@@ -132,4 +147,40 @@ func assertPanic(t *testing.T, f func()) {
 		}
 	}()
 	f()
+}
+
+func TestFormatLogWithValidInput(t *testing.T) {
+	message := "test message"
+	level := DebugLevel
+
+	result := formatLog(message, level)
+
+	if result == nil {
+		t.Errorf("Expected byte array, got nil")
+	}
+
+	var log map[string]string
+	err := json.Unmarshal(result, &log)
+	if err != nil {
+		t.Errorf("Error unmarshalling result: %v", err)
+	}
+
+	if log["message"] != message {
+		t.Errorf("Expected message %s, got %s", message, log["message"])
+	}
+
+	if log["level"] != level {
+		t.Errorf("Expected level %s, got %s", level, log["level"])
+	}
+}
+
+func TestFormatLogWithInvalidInput(t *testing.T) {
+	message := ""
+	level := ""
+
+	result := formatLog(message, level)
+
+	if result != nil {
+		t.Errorf("Expected nil, got byte array")
+	}
 }

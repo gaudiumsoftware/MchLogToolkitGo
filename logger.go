@@ -119,6 +119,10 @@ func (l *Logger) Error(message string) {
 }
 
 func formatLog(message, level string) []byte {
+	if message == "" || level == "" {
+		return nil
+	}
+
 	_, source, line, ok := runtime.Caller(2)
 	if !ok {
 		return nil
