@@ -1,6 +1,9 @@
 package MchLogToolkitGo
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
 
 func TestValidLogLevel(t *testing.T) {
 	levels := []string{DebugLevel, InfoLevel, WarnLevel, ErrorLevel}
@@ -47,6 +50,7 @@ func TestSetPath(t *testing.T) {
 }
 
 func TestLogMethods(t *testing.T) {
+	defer removeLogFiles(DebugPath)
 	serviceName := "test-service"
 	logger, err := NewLogger(serviceName, DebugLevel)
 	if err != nil {
@@ -55,24 +59,70 @@ func TestLogMethods(t *testing.T) {
 	logger.SetPath(DebugPath)
 	logger.Initialize()
 
-	t.Run(DebugLevel, func(t *testing.T) {
-		logger.Debug("debug message")
-		//TODO: checar se o log foi gravado no diretório correto e excluir arquivo após teste
-	})
+	levelFunctions := map[string]func(string){
+		DebugLevel: func(m string) { logger.Debug(m) },
+		InfoLevel:  func(m string) { logger.Info(m) },
+		WarnLevel:  func(m string) { logger.Warn(m) },
+		ErrorLevel: func(m string) { logger.Error(m) },
+	}
 
-	t.Run(InfoLevel, func(t *testing.T) {
-		logger.Info("info message")
-	})
+	levels := []string{DebugLevel, InfoLevel, WarnLevel, ErrorLevel}
+	messageLevel := map[string]string{
+		DebugLevel: "debug message",
+		InfoLevel:  "info message",
+		WarnLevel:  "warn message",
+		ErrorLevel: "error message",
+	}
+	for _, level := range levels {
+		t.Run(level, func(t *testing.T) {
+			if err = logger.SetLevel(level); err != nil {
+				t.Errorf("error setting level: %v", err)
+			}
 
-	t.Run(WarnLevel, func(t *testing.T) {
-		logger.Warn("warn message")
-	})
+			levelFunctions[level](messageLevel[level])
+			logPath := logger.log.GetFileNameFromStreamName(level)
+			if _, err = os.Stat(logPath); err != nil {
+				t.Errorf("error getting file info: %v", err)
+			}
 
-	t.Run(ErrorLevel, func(t *testing.T) {
-		logger.Error("error message")
-	})
+			if err := os.Remove(logPath); err != nil {
+				t.Errorf("error removing file: %v", err)
+			}
 
-	//TODO: excuir arquivos e pastas após teste
+			differentLevel := InfoLevel
+			if level == InfoLevel || level == ErrorLevel {
+				differentLevel = DebugLevel
+			}
+
+			if err = logger.SetLevel(differentLevel); err != nil {
+				t.Errorf("error setting level: %v", err)
+			}
+
+			levelFunctions[level](messageLevel[level])
+			if _, err := os.Stat(logPath); err == nil {
+				t.Errorf("file should not exist")
+			}
+		})
+	}
+}
+
+func TestInvalidMessage(t *testing.T) {
+	logger, err := NewLogger("test-service", DebugLevel)
+	if err != nil {
+		t.Errorf("error creating logger: %v", err)
+	}
+
+	logger.SetPath(DebugPath)
+	logger.Initialize()
+
+	//TODO
+}
+
+func removeLogFiles(path string) {
+	err := os.RemoveAll(DebugPath)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func assertPanic(t *testing.T, f func()) {
