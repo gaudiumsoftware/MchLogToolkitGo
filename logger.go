@@ -32,15 +32,18 @@ type Logger struct {
 // level: nível de log que será utilizado (DEBUG, INFO, WARN, ERROR)
 // Retorna um ponteiro para a instância do logger e um erro caso ocorra
 func NewLogger(service, level string) (*Logger, error) {
+	l := &Logger{log: nil, path: ProdPath}
+
 	if service == "" {
 		return nil, errors.New("service name is required")
 	}
 
-	if level == "" || level != DebugLevel && level != InfoLevel && level != WarnLevel && level != ErrorLevel {
-		return nil, errors.New("level is invalid")
+	l.service = service
+	err := l.SetLevel(level)
+	if err != nil {
+		return nil, err
 	}
-
-	return &Logger{log: nil, path: ProdPath, service: service, level: level}, nil
+	return l, nil
 }
 
 // Initialize inicializa o logger
@@ -57,6 +60,18 @@ func (l *Logger) SetPath(path string) {
 	}
 
 	l.path = path
+}
+
+// SetLevel define o nível de log que será utilizado
+// level: nível de log que será utilizado (DEBUG, INFO, WARN, ERROR)
+// Retorna um erro caso o nível de log seja inválido
+func (l *Logger) SetLevel(level string) error {
+	if level == "" || level != DebugLevel && level != InfoLevel && level != WarnLevel && level != ErrorLevel {
+		return errors.New("invalid log level")
+	}
+
+	l.level = level
+	return nil
 }
 
 func (l *Logger) Debug(message string) {
