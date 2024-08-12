@@ -77,13 +77,33 @@ Nesta seção são apresentados exemplos de bons e maus usos de logs.
 
 ### Bons usos
 - **Logs de informações**: são úteis para informar o que está acontecendo no sistema.
-Exemplo na função main, ao realizar a configurar e iniciar a aplicação:
+> Exemplo: na função main, ao realizar a configurar e iniciar a aplicação:
 ```go
 logger.Info("Aplicação iniciada e ouvindo na porta 80")
 ```
 - **Logs de debug**: são úteis para informar detalhes do sistema que podem ser úteis para depurar problemas.
-Exemplo numa função de busca no redis, ao realizar a busca printa o valor para verificar se está correto:
+> Exemplo: numa função de busca no redis, ao realizar a busca printa o valor para verificar se está correto:
 ```go
 value, err := redisClient.Get("key").Result()
 logger.Debug("Valor encontrado no redis: ", value)
+```
+- **Logs de warning**: são aqueles utilizados para informar mensagens de aviso, ou seja, situações que não comprometem o funcionamento do sistema mas que devem ser tratadas com atenção.
+> Exemplo: numa função que faz uma busca no redis e não consegue encontrar o dado, é importante informar que o dado não foi encontrado e continuar fazendo uma busca no mysql:
+```go
+value, err := redisClient.Get("key").Result()
+if err != nil {
+  logger.Warn("Valor não encontrado no redis, buscando no mysql")
+  value, err = mysqlClient.Query("SELECT key FROM table ...")
+  ...
+}
+...
+```
+- **Logs de erro**: são utilizados para informar erros que podem comprometer o funcionamento do sistema.
+> Exemplo: numa função que faz uma busca no mysql porém não consegue se conectar ao banco:
+```go
+value, err := mysqlClient.Query("SELECT * FROM table ...")
+if err != nil {
+  logger.Error("Erro ao buscar dados no mysql: ", err)
+  return err
+}
 ```
