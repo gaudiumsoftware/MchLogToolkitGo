@@ -1,0 +1,40 @@
+# [Nome do Projeto] - [Título Breve da Alteração]
+
+## Descrição
+Uma descrição detalhada do que este pull request muda. Inclua informações sobre o que cada commit faz e o motivo de cada mudança.
+
+## Tipo de Mudança
+- [ ] **Correção de Bug:** Esta alteração resolve um problema existente no projeto.
+- [ ] **Nova Funcionalidade:** Adição de uma nova funcionalidade que enriquece o projeto.
+- [ ] **Melhoria de Código:** Refatoração que melhora a performance ou legibilidade do código sem alterar funcionalidades.
+- [ ] **Breaking Change:** Alteração significativa que afeta a compatibilidade com versões anteriores, requerendo atenção especial durante a integração.
+- [ ] **Internacionalização e Localização:** Adição ou melhoria no suporte de múltiplos idiomas ou adaptações regionais.
+- [ ] **Desempenho:** Melhorias que aumentam a eficiência e velocidade do sistema.
+- [ ] **Segurança:** Correções ou melhorias que aumentam a segurança do projeto.
+- [ ] **Dependências:** Atualizações ou adições em bibliotecas e pacotes externos.
+- [ ] **Testes:** Adição ou melhoria nos testes do projeto, incluindo testes unitários, bdd, etc.
+- [ ] **Infraestrutura/DevOps:** Mudanças relacionadas à configuração de infraestrutura, CI/CD, ferramentas de desenvolvimento, alteração de config etc.
+
+## Checklist
+- [ ] Testei o código localmente
+- [ ] Revisei o código (self-review)
+- [ ] Comentei meu código, especialmente em áreas difíceis de entender
+- [ ] Fiz alterações correspondentes na documentação
+- [ ] Minhas alterações não geram novos warnings
+- [ ] Novos e existentes testes unitários passam localmente com minhas alterações
+- [ ] Chequei se o PR cumpre os critérios de aceitação da issue relacionada
+
+## Como testar as alterações
+Instruções específicas sobre como testar as novas mudanças. Isso pode incluir comandos para executar, configurações necessárias e o que procurar para confirmar que a alteração foi bem-sucedida.
+
+## Impactos no Deploy
+Descreva qualquer impacto que essa mudança possa causar em processos de deploy, banco de dados, etc.
+
+## Dependências
+Liste quaisquer dependências que precisam ser instaladas ou atualizadas para esta mudança.
+
+## Issues
+Informe aqui o link da issue que você está resolvendo.
+
+## Observações Adicionais
+Qualquer outra informação que você acha que será útil para os revisores entenderem e avaliarem seu pull request.
