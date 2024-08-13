@@ -3,9 +3,10 @@ package mchlogtoolkitgo
 import (
 	"encoding/json"
 	"errors"
-	"gaudium.com/gaudiumsoftware/mchlogtoolkitgo/mchlogcore"
 	"runtime"
 	"strconv"
+
+	"gaudium.com/gaudiumsoftware/mchlogtoolkitgo/mchlogcore"
 )
 
 const (
