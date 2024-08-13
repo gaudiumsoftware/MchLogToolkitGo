@@ -1,0 +1,8 @@
+# Arquivos de cobertura de testes
+*.out
+
+# arquivos de logs
+./applog
+
+# Arquivos da IDE
+.idea
