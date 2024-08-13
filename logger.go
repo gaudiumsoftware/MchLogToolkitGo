@@ -1,9 +1,9 @@
-package MchLogToolkitGo
+package mchlogtoolkitgo
 
 import (
 	"encoding/json"
 	"errors"
-	"gaudium.com.br/gaudiumsoftware/MchLogToolkitGo/mchlogcore"
+	"gaudium.com.br/gaudiumsoftware/mchlogtoolkitgo/mchlogcore"
 	"runtime"
 	"strconv"
 )
