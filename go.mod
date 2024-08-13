@@ -1,4 +1,4 @@
-module gaudium.com.br/gaudiumsoftware/MchLogToolkitGo
+module gaudium.com/gaudiumsoftware/mchlogtoolkitgo
 
 go 1.22.1
 
