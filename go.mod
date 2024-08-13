@@ -1,4 +1,4 @@
-module gaudium.com/gaudiumsoftware/mchlogtoolkitgo
+module github.com/gaudiumsoftware/mchlogtoolkitgo
 
 go 1.22.1
 
