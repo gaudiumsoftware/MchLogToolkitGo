@@ -1,4 +1,4 @@
-package MchLogToolkitGo
+package mchlogtoolkitgo
 
 import (
 	"encoding/json"
