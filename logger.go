@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"strconv"
 
-	"gaudium.com/gaudiumsoftware/mchlogtoolkitgo/mchlogcore"
+	"github.com/gaudiumsoftware/mchlogtoolkitgo/mchlogcore"
 )
 
 const (
