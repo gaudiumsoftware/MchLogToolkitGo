@@ -65,14 +65,18 @@ func TestLogMethods(t *testing.T) {
 		InfoLevel:  func(m string) { logger.Info(m) },
 		WarnLevel:  func(m string) { logger.Warn(m) },
 		ErrorLevel: func(m string) { logger.Error(m) },
+		TestLevel:  func(m string) { logger.Test(m) },
+		FatalLevel: func(m string) { logger.Fatal(m) },
 	}
 
-	levels := []string{DebugLevel, InfoLevel, WarnLevel, ErrorLevel}
+	levels := []string{DebugLevel, InfoLevel, WarnLevel, ErrorLevel, TestLevel, FatalLevel}
 	messageLevel := map[string]string{
 		DebugLevel: "debug message",
 		InfoLevel:  "info message",
 		WarnLevel:  "warn message",
 		ErrorLevel: "error message",
+		TestLevel:  "test message",
+		FatalLevel: "fatal message",
 	}
 	for _, level := range levels {
 		t.Run(level, func(t *testing.T) {
@@ -121,6 +125,8 @@ func TestInvalidMessages(t *testing.T) {
 		InfoLevel:  logger.Info,
 		WarnLevel:  logger.Warn,
 		ErrorLevel: logger.Error,
+		TestLevel:  logger.Test,
+		FatalLevel: logger.Fatal,
 	}
 	for level, levelMethod := range levelFunctions {
 		t.Run(level, func(t *testing.T) {

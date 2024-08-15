@@ -2,13 +2,18 @@
 Ferramenta de log para Go do sistema Machine.
 
 ## Recursos disponíveis na ferramenta
-- **Níveis de log**: INFO, DEBUG, WARN e ERROR.
+- **Níveis de log**: INFO, TEST, DEBUG, WARN, ERROR e FATAL.
 - **Criação de arquivos de log**: cria arquivos de log no formato JSON.
 - **Criação de arquivos de log por nível**: cria arquivos de log separados por nível.
 - **Criação de arquivos de log separados por hora**: cria arquivos de log separados por hora.
 - **Criação de diretório padrão para arquivos de log**: os logs são sempre salvos em /applog/<nome-do-serviço>.
 
 ## Utilização nos serviços da Machine
+Por ser um pacote privado no github, é necessário informar ao Go que está sendo utilizado um repositório privado.
+```bash
+export GOPRIVATE=github.com/gaudiumsoftware/mchlogtoolkitgo
+```
+
 Adiciona o módulo no projeto go com o comando:
 ```bash
 go get github.com/gaudiumsoftware/mchlogtoolkitgo
@@ -27,7 +32,7 @@ level = "debug"
 
 Pega o nível de log do arquivo de configuração do serviço:
 ```go
-level := config.GetString("log.level")
+level := config.GetString("log.level").(string)
 ```
 
 Inicializa o logger no código para utilização:
@@ -48,15 +53,17 @@ logger.Initialize()
 
 O nível pode ser setado também posteriormente coma função SetLevel:
 ```go
-logger.SetLevel(mchlogtoolkitgo.DbugLevel)
+logger.SetLevel(mchlogtoolkitgo.DebugLevel)
 ```
 
 Utiliza o logger para logar mensagens:
 ```go
 logger.Info("mensagem de informação")
+logger.Test("mensagem de teste")
 logger.Debug("mensagem de debug")
 logger.Warn("mensagem de aviso")
 logger.Error("mensagem de erro")
+logger.Fatal("mensagem de erro fatal")
 ```
 Estas chamadas criarão arquivos de logs no diretório /applog/service-name/INFO no formato:
 ```json
@@ -87,6 +94,14 @@ logger.Info("Aplicação iniciada e ouvindo na porta 80")
 value, err := redisClient.Get("key").Result()
 logger.Debug("Valor encontrado no redis: ", value)
 ```
+- **Logs de teste**: são úteis para informar a respeito da execução de testes.
+> Exemplo: numa função de teste, ao realizar uma requisição de teste, informa o valor do parâmetro recebido:
+```go
+if val, ok := params["test"]; ok {
+  logger.Test("Teste de requisição: ", val)
+}
+``` 
+
 - **Logs de warning**: são aqueles utilizados para informar mensagens de aviso, ou seja, situações que não comprometem o funcionamento do sistema mas que devem ser tratadas com atenção.
 > Exemplo: numa função que faz uma busca no redis e não consegue encontrar o dado, é importante informar que o dado não foi encontrado e continuar fazendo uma busca no mysql:
 ```go
@@ -105,5 +120,15 @@ value, err := mysqlClient.Query("SELECT * FROM table ...")
 if err != nil {
   logger.Error("Erro ao buscar dados no mysql: ", err)
   return err
+}
+```
+
+- **Logs de erro fatal**: são utilizados para informar erros que definitivamente comprometem o funcionamento do sistema.
+> Exemplo: numa função que faz a conexão com o mysql e falha, é importante informar o erro e encerrar a aplicação:
+```go
+db, err := sql.Open("mysql", MySQLDNS)
+if err != nil {
+    logger.Fatal("Error connecting to mysql: " + err.Error())
+    os.Exit(1)
 }
 ```

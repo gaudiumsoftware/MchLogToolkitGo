@@ -5,15 +5,18 @@ import (
 	"errors"
 	"runtime"
 	"strconv"
+	"strings"
 
 	"github.com/gaudiumsoftware/mchlogtoolkitgo/mchlogcore"
 )
 
 const (
-	DebugLevel = "DEBUG"
-	InfoLevel  = "INFO"
-	WarnLevel  = "WARN"
-	ErrorLevel = "ERROR"
+	TestLevel  = "test"
+	DebugLevel = "debug"
+	InfoLevel  = "info"
+	WarnLevel  = "warn"
+	ErrorLevel = "error"
+	FatalLevel = "fatal"
 
 	DebugPath = "./applog/"
 	ProdPath  = "/applog/"
@@ -67,12 +70,27 @@ func (l *Logger) SetPath(path string) {
 // level: nível de log que será utilizado (DEBUG, INFO, WARN, ERROR)
 // Retorna um erro caso o nível de log seja inválido
 func (l *Logger) SetLevel(level string) error {
-	if level == "" || level != DebugLevel && level != InfoLevel && level != WarnLevel && level != ErrorLevel {
+	level = strings.ToLower(level)
+
+	if level == "" || level != DebugLevel && level != InfoLevel && level != WarnLevel && level != ErrorLevel && level != FatalLevel && level != TestLevel {
 		return errors.New("invalid log level")
 	}
 
 	l.level = level
 	return nil
+}
+
+func (l *Logger) Test(message string) {
+	if l.level != TestLevel {
+		return
+	}
+
+	byteMessage := formatLog(message, TestLevel)
+	if byteMessage == nil {
+		panic("error formatting log message")
+	}
+
+	l.log.LogSubject(TestLevel, byteMessage, nil)
 }
 
 func (l *Logger) Debug(message string) {
@@ -111,12 +129,21 @@ func (l *Logger) Info(message string) {
 }
 
 func (l *Logger) Error(message string) {
-	byteMessage := formatLog(message, DebugLevel)
+	byteMessage := formatLog(message, ErrorLevel)
 	if byteMessage == nil {
 		panic("error formatting log message")
 	}
 
 	l.log.LogSubject(ErrorLevel, byteMessage, nil)
+}
+
+func (l *Logger) Fatal(message string) {
+	byteMessage := formatLog(message, FatalLevel)
+	if byteMessage == nil {
+		panic("error formatting log message")
+	}
+
+	l.log.LogSubject(FatalLevel, byteMessage, nil)
 }
 
 func formatLog(message, level string) []byte {
