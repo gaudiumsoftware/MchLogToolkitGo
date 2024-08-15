@@ -95,7 +95,7 @@ value, err := redisClient.Get("key").Result()
 logger.Debug("Valor encontrado no redis: ", value)
 ```
 - **Logs de teste**: são úteis para informar a respeito da execução de testes.
-> Exemplo: numa função de teste, ao realizar uma requisição de teste, informa o isto:
+> Exemplo: numa função de teste, ao realizar uma requisição de teste, informa o valor do parâmetro recebido:
 ```go
 if val, ok := params["test"]; ok {
   logger.Test("Teste de requisição: ", val)
