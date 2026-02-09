@@ -107,7 +107,9 @@ func (l *LogType) LogSubject(subject string, content any, errLog error, ascendSt
 		// Abre o arquivo para escrita ao final (append). Cria se não existir.
 		f, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 		if err != nil {
-			log.Error().Err(err).Str("filename", filename).Interface("conteudo", subject).Msg("mchlogcorev2: falha ao criar e abrir arquivo de log")
+			if subject != "error" {
+				l.LogSubject("error", map[string]any{"error": err.Error()}, nil)
+			}
 			return
 		}
 
