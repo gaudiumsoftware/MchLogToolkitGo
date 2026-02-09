@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 /* Exemplo de uso do mchlogcore.
@@ -109,6 +110,7 @@ func (l *LogType) LogSubject(subject string, content any, errLog error, ascendSt
 		// Abre o arquivo para escrita ao final (append). Cria se não existir.
 		f, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 		if err != nil {
+			log.Error().Err(err).Str("filename", filename).Interface("conteudo", subject).Msg("mchlogcoreV2: falha ao criar e abrir arquivo de log")
 			return
 		}
 
@@ -122,6 +124,7 @@ func (l *LogType) LogSubject(subject string, content any, errLog error, ascendSt
 	// Processa o conteúdo e gera o evento de log
 	event, err := l.getJSONLogger(logger, content)
 	if err != nil {
+		log.Error().Err(err).Interface("conteudo", subject).Msg("mchlogcoreV2: falha ao processar conteúdo do log")
 		return
 	}
 
