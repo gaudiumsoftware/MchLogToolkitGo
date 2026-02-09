@@ -1,4 +1,4 @@
-package mchlogcoreV1
+package mchlogcorev1
 
 import (
 	"encoding/json"

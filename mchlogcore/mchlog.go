@@ -1,8 +1,8 @@
 package mchlogcore
 
 import (
-	"github.com/gaudiumsoftware/mchlogtoolkitgo/mchlogcoreV1"
-	"github.com/gaudiumsoftware/mchlogtoolkitgo/mchlogcoreV2"
+	"github.com/gaudiumsoftware/mchlogtoolkitgo/mchlogcorev1"
+	"github.com/gaudiumsoftware/mchlogtoolkitgo/mchlogcorev2"
 )
 
 // LogVersion is a type to define which version of the logger to use
@@ -29,25 +29,25 @@ type LogType struct{}
 // LogSubject records the content to the log file using the selected version
 func (l *LogType) LogSubject(subject string, content any, errLog error, ascendStackFrame ...int) {
 	if currentVersion == V1 {
-		mchlogcoreV1.MchLog.LogSubject(subject, content, errLog, ascendStackFrame...)
+		mchlogcorev1.MchLog.LogSubject(subject, content, errLog, ascendStackFrame...)
 	} else {
-		mchlogcoreV2.MchLog.LogSubject(subject, content, errLog, ascendStackFrame...)
+		mchlogcorev2.MchLog.LogSubject(subject, content, errLog, ascendStackFrame...)
 	}
 }
 
 // GetFileNameFromStreamName returns the log file path for the given subject
 func (l *LogType) GetFileNameFromStreamName(subject string) string {
 	if currentVersion == V1 {
-		return mchlogcoreV1.MchLog.GetFileNameFromStreamName(subject)
-	} else {
-		return mchlogcoreV2.MchLog.GetFileNameFromStreamName(subject)
+		return mchlogcorev1.MchLog.GetFileNameFromStreamName(subject)
 	}
+
+	return mchlogcorev2.MchLog.GetFileNameFromStreamName(subject)
 }
 
 // GetIP returns the IP where the log is running (only available in V1, returns empty for V2)
 func (l *LogType) GetIP() string {
 	if currentVersion == V1 {
-		return mchlogcoreV1.MchLog.GetIP()
+		return mchlogcorev1.MchLog.GetIP()
 	}
 	return ""
 }
@@ -59,10 +59,10 @@ var MchLog LogType
 func InitializeMchLog(path string) {
 	versionName := "V1"
 	if currentVersion == V1 {
-		mchlogcoreV1.InitializeMchLog(path)
+		mchlogcorev1.InitializeMchLog(path)
 	} else {
 		versionName = "V2"
-		mchlogcoreV2.InitializeMchLog(path)
+		mchlogcorev2.InitializeMchLog(path)
 	}
 
 	// The first log in info should be the version of the logger (v1 or v2)
