@@ -1,6 +1,9 @@
 package mchlogcore
 
 import (
+	"log"
+	"sync"
+
 	"github.com/gaudiumsoftware/mchlogtoolkitgo/mchlogcorev1"
 	"github.com/gaudiumsoftware/mchlogtoolkitgo/mchlogcorev2"
 	"github.com/gaudiumsoftware/mchlogtoolkitgo/mchloggelf"
@@ -14,11 +17,19 @@ const (
 	V1 LogVersion = iota
 	// V2 refers to the second version of the logger, which has a simpler file structure without IP or timestamps in names
 	V2
+
+	// udpBufferSize is the size of the buffered channel for async UDP sends.
+	// Messages beyond this buffer are dropped to prevent memory exhaustion.
+	udpBufferSize = 1000
 )
 
 var currentVersion = V1
 var udpTransport *mchloggelf.UDPTransport
 var fileOutputEnabled = true
+
+var udpChan chan *mchloggelf.GELFMessage
+var udpOnce sync.Once
+var udpDone chan struct{}
 
 // SetVersion chooses which version to use (V1 or V2).
 // This should ideally be called before InitializeMchLog.
@@ -30,12 +41,50 @@ func SetVersion(v LogVersion) {
 // The address should be in "host:port" format (e.g., "graylog.example.com:12201").
 // If compress is true, messages will be GZIP compressed.
 func SetUDPTarget(address string, compress bool) error {
+	// Close any existing connection to avoid file descriptor leaks
+	if udpTransport != nil {
+		closeUDPWorker()
+	}
+
 	t, err := mchloggelf.NewUDPTransport(address, compress)
 	if err != nil {
 		return err
 	}
 	udpTransport = t
+	startUDPWorker()
 	return nil
+}
+
+// startUDPWorker initializes the buffered channel and starts a single worker
+// goroutine that reads messages and sends them over UDP sequentially.
+func startUDPWorker() {
+	udpChan = make(chan *mchloggelf.GELFMessage, udpBufferSize)
+	udpDone = make(chan struct{})
+	udpOnce = sync.Once{}
+
+	go func() {
+		defer close(udpDone)
+		for msg := range udpChan {
+			if udpTransport != nil {
+				if err := udpTransport.Send(msg); err != nil {
+					log.Printf("[mchlog] failed to send GELF message via UDP: %v", err)
+				}
+			}
+		}
+	}()
+}
+
+// closeUDPWorker drains the channel and waits for the worker to finish.
+func closeUDPWorker() {
+	if udpChan != nil {
+		close(udpChan)
+		<-udpDone
+		udpChan = nil
+	}
+	if udpTransport != nil {
+		_ = udpTransport.Close()
+		udpTransport = nil
+	}
 }
 
 // SetFileOutput enables or disables file-based log output.
@@ -44,13 +93,9 @@ func SetFileOutput(enabled bool) {
 	fileOutputEnabled = enabled
 }
 
-// CloseUDP closes the UDP transport connection if one is active.
+// CloseUDP closes the UDP worker and transport connection if active.
 func CloseUDP() error {
-	if udpTransport != nil {
-		err := udpTransport.Close()
-		udpTransport = nil
-		return err
-	}
+	closeUDPWorker()
 	return nil
 }
 
@@ -67,10 +112,15 @@ func (l *LogType) LogSubject(subject string, content any, errLog error, ascendSt
 		}
 	}
 
-	if udpTransport != nil {
+	if udpChan != nil {
 		msg, err := mchloggelf.NewGELFMessage(subject, content, errLog)
 		if err == nil {
-			go udpTransport.Send(msg)
+			select {
+			case udpChan <- msg:
+				// Message queued successfully
+			default:
+				log.Printf("[mchlog] UDP send buffer full, dropping GELF message for subject %q", subject)
+			}
 		}
 	}
 }

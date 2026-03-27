@@ -79,6 +79,78 @@ Estas chamadas criarão arquivos de logs no diretório /applog/service-name/INFO
 
 ```
 
+## Envio de logs via UDP (GELF/Graylog)
+
+O logger suporta envio de logs via UDP no formato **GELF 1.1** (Graylog Extended Log Format), compatível com Graylog, Logstash/Kibana, Fluentd e outras plataformas de observabilidade.
+
+### Configuração via código
+
+```go
+logger, _ := mchlogtoolkitgo.NewLogger("service-name", "info")
+logger.SetUDPTarget("graylog.example.com:12201")  // Habilita envio UDP com GZIP
+logger.Initialize()
+
+defer logger.Close()  // Fecha a conexão UDP ao encerrar
+```
+
+Para desabilitar a compressão GZIP ou a saída em arquivo:
+```go
+logger.SetUDPTargetWithOptions("graylog.example.com:12201", false)  // Sem GZIP
+logger.DisableFileOutput()  // Somente UDP, sem arquivos locais
+```
+
+### Configuração via variáveis de ambiente
+
+O logger detecta automaticamente as seguintes variáveis de ambiente durante o `Initialize()`:
+
+| Variável | Descrição | Exemplo |
+|---|---|---|
+| `MCHLOG_UDP_TARGET` | Endereço do servidor GELF (host:porta) | `graylog.example.com:12201` |
+| `MCHLOG_UDP_COMPRESS` | Compressão GZIP (`true`/`false`, padrão: `true`) | `false` |
+| `MCHLOG_FILE_OUTPUT` | Saída em arquivo (`true`/`false`, padrão: `true`) | `false` |
+
+Exemplo de uso com variáveis de ambiente:
+```bash
+export MCHLOG_UDP_TARGET=graylog.example.com:12201
+export MCHLOG_UDP_COMPRESS=true
+export MCHLOG_FILE_OUTPUT=false
+```
+
+Com as variáveis definidas, o `Initialize()` configura o envio UDP automaticamente:
+```go
+logger, _ := mchlogtoolkitgo.NewLogger("service-name", "info")
+logger.Initialize()  // Detecta MCHLOG_UDP_TARGET e configura UDP
+defer logger.Close()
+```
+
+### Formato da mensagem GELF
+
+As mensagens são enviadas no formato GELF 1.1:
+```json
+{
+  "version": "1.1",
+  "host": "nome-do-host",
+  "short_message": "mensagem de informação",
+  "timestamp": 1711540800.123,
+  "level": 6,
+  "_source": "path/service.go",
+  "_line": "42",
+  "_trace": ""
+}
+```
+
+O campo `level` segue o padrão syslog: Emergency (0), Error (3), Warning (4), Informational (6), Debug (7).
+
+### Modos de operação
+
+| Modo | Arquivo | UDP | Configuração |
+|---|---|---|---|
+| Somente arquivo (padrão) | sim | nao | Nenhuma configuração adicional |
+| Arquivo + UDP | sim | sim | Definir `MCHLOG_UDP_TARGET` |
+| Somente UDP | nao | sim | Definir `MCHLOG_UDP_TARGET` e `MCHLOG_FILE_OUTPUT=false` |
+
+---
+
 ## Boas práticas de logs
 Nesta seção são apresentados exemplos de bons e maus usos de logs.
 
