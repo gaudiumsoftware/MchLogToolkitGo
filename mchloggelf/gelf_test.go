@@ -44,7 +44,13 @@ func TestNewGELFMessageFromBytes(t *testing.T) {
 		t.Errorf("version = %q, want %q", msg.Version, "1.1")
 	}
 
+	if msg.Host == "" {
+		t.Error("host should never be empty (GELF spec requires it)")
+	}
 	hostname, _ := os.Hostname()
+	if hostname == "" {
+		hostname = "unknown"
+	}
 	if msg.Host != hostname {
 		t.Errorf("host = %q, want %q", msg.Host, hostname)
 	}

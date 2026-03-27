@@ -3,6 +3,7 @@ package mchlogtoolkitgo
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"os"
 	"runtime"
 	"strconv"
@@ -73,8 +74,9 @@ func (l *Logger) Initialize() {
 		if v := os.Getenv(EnvUDPCompress); strings.ToLower(v) == "false" {
 			compress = false
 		}
-		// Best-effort: if UDP setup fails, continue with file output
-		mchlogcore.SetUDPTarget(target, compress)
+		if err := mchlogcore.SetUDPTarget(target, compress); err != nil {
+			log.Printf("[mchlog] failed to configure UDP target %q from environment: %v", target, err)
+		}
 	}
 
 	// Check environment variable for file output

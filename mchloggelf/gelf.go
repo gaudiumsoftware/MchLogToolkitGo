@@ -2,6 +2,7 @@ package mchloggelf
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"time"
 )
@@ -58,6 +59,10 @@ func (m *GELFMessage) MarshalJSON() ([]byte, error) {
 }
 
 // LevelToSyslog maps application log level strings to syslog severity levels.
+// The level parameter corresponds to the "subject" used in LogSubject, which in
+// the standard Logger API is always one of: "fatal", "error", "warn", "info",
+// "debug", or "test". If a non-standard subject is passed, it defaults to
+// SyslogInformational (6).
 func LevelToSyslog(level string) int {
 	switch level {
 	case "fatal":
@@ -79,7 +84,10 @@ func LevelToSyslog(level string) int {
 // The content is expected to be JSON bytes (as produced by formatLog in logger.go)
 // or a map[string]any / map[string]string.
 func NewGELFMessage(subject string, content any, errLog error) (*GELFMessage, error) {
-	hostname, _ := os.Hostname()
+	hostname, err := os.Hostname()
+	if err != nil || hostname == "" {
+		hostname = "unknown"
+	}
 
 	msg := &GELFMessage{
 		Version:   "1.1",
@@ -155,7 +163,7 @@ func contentToMap(content any) (map[string]any, error) {
 		}
 		return m, nil
 	default:
-		return nil, json.Unmarshal([]byte("{}"), new(map[string]any))
+		return nil, fmt.Errorf("unsupported content type: %T", content)
 	}
 }
 

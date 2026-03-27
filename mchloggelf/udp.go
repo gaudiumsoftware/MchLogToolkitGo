@@ -70,6 +70,10 @@ func (t *UDPTransport) Send(msg *GELFMessage) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	if t.conn == nil {
+		return fmt.Errorf("transport is closed")
+	}
+
 	if len(data) <= maxChunkSize {
 		_, err = t.conn.Write(data)
 		return err
@@ -123,7 +127,9 @@ func (t *UDPTransport) Close() error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.conn != nil {
-		return t.conn.Close()
+		err := t.conn.Close()
+		t.conn = nil
+		return err
 	}
 	return nil
 }

@@ -142,13 +142,15 @@ func (l *LogType) LogSubject(subject string, content any, errLog error, ascendSt
 
 	if ch != nil {
 		msg, err := mchloggelf.NewGELFMessage(subject, content, errLog)
-		if err == nil {
-			select {
-			case ch <- msg:
-				// Message queued successfully
-			default:
-				log.Printf("[mchlog] UDP send buffer full, dropping GELF message for subject %q", subject)
-			}
+		if err != nil {
+			log.Printf("[mchlog] failed to create GELF message for subject %q: %v", subject, err)
+			return
+		}
+		select {
+		case ch <- msg:
+			// Message queued successfully
+		default:
+			log.Printf("[mchlog] UDP send buffer full, dropping GELF message for subject %q", subject)
 		}
 	}
 }
