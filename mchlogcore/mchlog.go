@@ -3,6 +3,7 @@ package mchlogcore
 import (
 	"github.com/gaudiumsoftware/mchlogtoolkitgo/mchlogcorev1"
 	"github.com/gaudiumsoftware/mchlogtoolkitgo/mchlogcorev2"
+	"github.com/gaudiumsoftware/mchlogtoolkitgo/mchloggelf"
 )
 
 // LogVersion is a type to define which version of the logger to use
@@ -16,6 +17,8 @@ const (
 )
 
 var currentVersion = V1
+var udpTransport *mchloggelf.UDPTransport
+var fileOutputEnabled = true
 
 // SetVersion chooses which version to use (V1 or V2).
 // This should ideally be called before InitializeMchLog.
@@ -23,15 +26,52 @@ func SetVersion(v LogVersion) {
 	currentVersion = v
 }
 
+// SetUDPTarget configures a UDP transport to send GELF messages to the given address.
+// The address should be in "host:port" format (e.g., "graylog.example.com:12201").
+// If compress is true, messages will be GZIP compressed.
+func SetUDPTarget(address string, compress bool) error {
+	t, err := mchloggelf.NewUDPTransport(address, compress)
+	if err != nil {
+		return err
+	}
+	udpTransport = t
+	return nil
+}
+
+// SetFileOutput enables or disables file-based log output.
+// When disabled, logs are only sent via UDP (if configured).
+func SetFileOutput(enabled bool) {
+	fileOutputEnabled = enabled
+}
+
+// CloseUDP closes the UDP transport connection if one is active.
+func CloseUDP() error {
+	if udpTransport != nil {
+		err := udpTransport.Close()
+		udpTransport = nil
+		return err
+	}
+	return nil
+}
+
 // LogType is the facade structure that delegates calls to either V1 or V2 implementation
 type LogType struct{}
 
-// LogSubject records the content to the log file using the selected version
+// LogSubject records the content to the log file and/or sends it via UDP using the selected version
 func (l *LogType) LogSubject(subject string, content any, errLog error, ascendStackFrame ...int) {
-	if currentVersion == V1 {
-		mchlogcorev1.MchLog.LogSubject(subject, content, errLog, ascendStackFrame...)
-	} else {
-		mchlogcorev2.MchLog.LogSubject(subject, content, errLog, ascendStackFrame...)
+	if fileOutputEnabled {
+		if currentVersion == V1 {
+			mchlogcorev1.MchLog.LogSubject(subject, content, errLog, ascendStackFrame...)
+		} else {
+			mchlogcorev2.MchLog.LogSubject(subject, content, errLog, ascendStackFrame...)
+		}
+	}
+
+	if udpTransport != nil {
+		msg, err := mchloggelf.NewGELFMessage(subject, content, errLog)
+		if err == nil {
+			go udpTransport.Send(msg)
+		}
 	}
 }
 

@@ -3,6 +3,7 @@ package mchlogtoolkitgo
 import (
 	"encoding/json"
 	"errors"
+	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -20,6 +21,18 @@ const (
 
 	DebugPath = "./applog/"
 	ProdPath  = "/applog/"
+
+	// EnvUDPTarget is the environment variable name for the UDP target address.
+	// Format: "host:port" (e.g., "graylog.example.com:12201")
+	EnvUDPTarget = "MCHLOG_UDP_TARGET"
+
+	// EnvUDPCompress is the environment variable to enable/disable GZIP compression for UDP.
+	// Values: "true" or "false" (default: "true")
+	EnvUDPCompress = "MCHLOG_UDP_COMPRESS"
+
+	// EnvFileOutput is the environment variable to enable/disable file output.
+	// Values: "true" or "false" (default: "true")
+	EnvFileOutput = "MCHLOG_FILE_OUTPUT"
 )
 
 // Logger é a estrutura que encapsula as funcionalidades de log da aplicação
@@ -50,8 +63,25 @@ func NewLogger(service, level string) (*Logger, error) {
 	return l, nil
 }
 
-// Initialize inicializa o logger
+// Initialize inicializa o logger.
+// If the environment variable MCHLOG_UDP_TARGET is set, UDP output is automatically configured.
+// If MCHLOG_FILE_OUTPUT is set to "false", file output is disabled.
 func (l *Logger) Initialize() {
+	// Check environment variables for UDP configuration
+	if target := os.Getenv(EnvUDPTarget); target != "" {
+		compress := true
+		if v := os.Getenv(EnvUDPCompress); strings.ToLower(v) == "false" {
+			compress = false
+		}
+		// Best-effort: if UDP setup fails, continue with file output
+		mchlogcore.SetUDPTarget(target, compress)
+	}
+
+	// Check environment variable for file output
+	if v := os.Getenv(EnvFileOutput); strings.ToLower(v) == "false" {
+		mchlogcore.SetFileOutput(false)
+	}
+
 	mchlogcore.InitializeMchLog(l.path + l.service + "/")
 	l.log = &mchlogcore.MchLog
 }
@@ -78,6 +108,31 @@ func (l *Logger) SetLevel(level string) error {
 
 	l.level = level
 	return nil
+}
+
+// SetUDPTarget configures the logger to send GELF messages via UDP to the given address.
+// The address should be in "host:port" format (e.g., "graylog.example.com:12201").
+// GZIP compression is enabled by default. Must be called before Initialize().
+func (l *Logger) SetUDPTarget(address string) error {
+	return mchlogcore.SetUDPTarget(address, true)
+}
+
+// SetUDPTargetWithOptions configures the logger to send GELF messages via UDP with explicit options.
+// The address should be in "host:port" format (e.g., "graylog.example.com:12201").
+// If compress is true, messages will be GZIP compressed before sending.
+func (l *Logger) SetUDPTargetWithOptions(address string, compress bool) error {
+	return mchlogcore.SetUDPTarget(address, compress)
+}
+
+// DisableFileOutput disables file-based log output.
+// When called, logs are only sent via UDP (if configured).
+func (l *Logger) DisableFileOutput() {
+	mchlogcore.SetFileOutput(false)
+}
+
+// Close releases resources held by the logger (e.g., UDP connections).
+func (l *Logger) Close() error {
+	return mchlogcore.CloseUDP()
 }
 
 func (l *Logger) Test(message string) {
