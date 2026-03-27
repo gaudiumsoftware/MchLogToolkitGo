@@ -4,8 +4,26 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 )
+
+// cachedHostname is resolved once and reused for all GELF messages,
+// avoiding a syscall per log message in high-throughput scenarios.
+var cachedHostname string
+var hostnameOnce sync.Once
+
+func getHostname() string {
+	hostnameOnce.Do(func() {
+		h, err := os.Hostname()
+		if err != nil || h == "" {
+			cachedHostname = "unknown"
+		} else {
+			cachedHostname = h
+		}
+	})
+	return cachedHostname
+}
 
 // GELF syslog severity levels
 const (
@@ -84,23 +102,23 @@ func LevelToSyslog(level string) int {
 // The content is expected to be JSON bytes (as produced by formatLog in logger.go)
 // or a map[string]any / map[string]string.
 func NewGELFMessage(subject string, content any, errLog error) (*GELFMessage, error) {
-	hostname, err := os.Hostname()
-	if err != nil || hostname == "" {
-		hostname = "unknown"
-	}
-
 	msg := &GELFMessage{
 		Version:   "1.1",
-		Host:      hostname,
+		Host:      getHostname(),
 		Timestamp: float64(time.Now().UnixNano()) / 1e9,
 		Level:     LevelToSyslog(subject),
 		Extra:     make(map[string]any),
 	}
 
+	// Attach application error before any early return so it is never lost
+	if errLog != nil {
+		msg.Extra["error"] = errLog.Error()
+	}
+
 	// Parse content into a map to extract fields
 	contentMap, err := contentToMap(content)
 	if err != nil {
-		// Fallback: use subject as short_message
+		// Fallback: use subject as short_message, errLog is already attached above
 		msg.ShortMessage = subject
 		return msg, nil
 	}
@@ -119,11 +137,6 @@ func NewGELFMessage(subject string, content any, errLog error) (*GELFMessage, er
 	// All remaining fields become extra fields (prefixed with _ during marshal)
 	for k, v := range contentMap {
 		msg.Extra[k] = v
-	}
-
-	// Add error info if present
-	if errLog != nil {
-		msg.Extra["error"] = errLog.Error()
 	}
 
 	// GELF requires short_message to be non-empty

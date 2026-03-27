@@ -115,7 +115,7 @@ func (t *UDPTransport) sendChunked(data []byte) error {
 		chunk = append(chunk, data[start:end]...)
 
 		if _, err := t.conn.Write(chunk); err != nil {
-			return fmt.Errorf("failed to send chunk %d/%d: %w", i+1, chunkCount, err)
+			return fmt.Errorf("failed to send chunk %d/%d (chunks 1-%d already sent, message will be incomplete on receiver): %w", i+1, chunkCount, i, err)
 		}
 	}
 

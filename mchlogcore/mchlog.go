@@ -27,6 +27,10 @@ const (
 var currentVersion = V1
 
 // udpMu protects udpTransport, udpChan, and udpDone from concurrent access.
+// LogSubject holds RLock during the entire channel send to prevent closeLocked
+// from closing the channel mid-send. closeLocked acquires the write lock,
+// which blocks until all RLocks are released, ensuring no goroutine is
+// sending to the channel when it is closed.
 var udpMu sync.RWMutex
 var udpTransport *mchloggelf.UDPTransport
 var udpChan chan *mchloggelf.GELFMessage
@@ -66,13 +70,14 @@ func SetUDPTarget(address string, compress bool) error {
 
 // startWorkerLocked initializes the buffered channel and starts a single worker
 // goroutine that reads messages and sends them over UDP sequentially.
-// Must be called with udpMu held.
+// Must be called with udpMu write lock held.
 func startWorkerLocked() {
 	udpChan = make(chan *mchloggelf.GELFMessage, udpBufferSize)
 	udpDone = make(chan struct{})
 
-	// Capture references for the goroutine so it doesn't access the global
-	// variables after they've been swapped by a subsequent SetUDPTarget call.
+	// Capture references for the goroutine so it operates independently
+	// of the global variables. The worker reads from its own channel ref
+	// and does not need the mutex.
 	ch := udpChan
 	done := udpDone
 	transport := udpTransport
@@ -87,17 +92,15 @@ func startWorkerLocked() {
 	}()
 }
 
-// closeLocked drains the channel, waits for the worker to finish,
-// and closes the UDP transport. Must be called with udpMu held.
+// closeLocked stops the worker, drains the channel, and closes the UDP transport.
+// Must be called with udpMu write lock held. The write lock guarantees that no
+// LogSubject goroutine is mid-send (they hold RLock during send), so closing the
+// channel is safe. The worker goroutine uses captured references and does not
+// need the mutex, so waiting on udpDone under the write lock cannot deadlock.
 func closeLocked() {
 	if udpChan != nil {
 		close(udpChan)
-		// Release the lock while waiting for the worker to drain,
-		// so LogSubject is not blocked. The worker uses its own captured
-		// channel reference, so this is safe.
-		udpMu.Unlock()
 		<-udpDone
-		udpMu.Lock()
 		udpChan = nil
 		udpDone = nil
 	}
@@ -134,24 +137,26 @@ func (l *LogType) LogSubject(subject string, content any, errLog error, ascendSt
 		}
 	}
 
-	// Hold a read lock for the duration of the channel send to prevent
-	// the channel from being closed between the nil check and the send.
+	// Hold RLock for the entire nil-check + send to prevent closeLocked from
+	// closing the channel between the check and the send. The non-blocking
+	// select ensures we never block while holding the lock.
 	udpMu.RLock()
-	ch := udpChan
-	udpMu.RUnlock()
+	defer udpMu.RUnlock()
 
-	if ch != nil {
-		msg, err := mchloggelf.NewGELFMessage(subject, content, errLog)
-		if err != nil {
-			log.Printf("[mchlog] failed to create GELF message for subject %q: %v", subject, err)
-			return
-		}
-		select {
-		case ch <- msg:
-			// Message queued successfully
-		default:
-			log.Printf("[mchlog] UDP send buffer full, dropping GELF message for subject %q", subject)
-		}
+	if udpChan == nil {
+		return
+	}
+
+	msg, err := mchloggelf.NewGELFMessage(subject, content, errLog)
+	if err != nil {
+		log.Printf("[mchlog] failed to create GELF message for subject %q: %v", subject, err)
+		return
+	}
+	select {
+	case udpChan <- msg:
+		// Message queued successfully
+	default:
+		log.Printf("[mchlog] UDP send buffer full, dropping GELF message for subject %q", subject)
 	}
 }
 
@@ -175,14 +180,18 @@ func (l *LogType) GetIP() string {
 // MchLog is the global instance of the log facade
 var MchLog LogType
 
-// InitializeMchLog initializes the selected version's backend with the given path
+// InitializeMchLog initializes the selected version's backend with the given path.
+// If file output is disabled, the file backend is not initialized and no
+// directories or files are created.
 func InitializeMchLog(path string) {
 	versionName := "V1"
-	if currentVersion == V1 {
-		mchlogcorev1.InitializeMchLog(path)
-	} else {
-		versionName = "V2"
-		mchlogcorev2.InitializeMchLog(path)
+	if fileOutputEnabled.Load() {
+		if currentVersion == V1 {
+			mchlogcorev1.InitializeMchLog(path)
+		} else {
+			versionName = "V2"
+			mchlogcorev2.InitializeMchLog(path)
+		}
 	}
 
 	// The first log in info should be the version of the logger (v1 or v2)
