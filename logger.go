@@ -137,7 +137,10 @@ func (l *Logger) DisableFileOutput() {
 	mchlogcore.SetFileOutput(false)
 }
 
-// Close releases resources held by the logger (e.g., UDP connections).
+// Close drains any buffered UDP messages and closes the UDP connection.
+// It does NOT close file handles used by the file logging backends (V1/V2),
+// as those write directly to unbuffered *os.File handles managed by zerolog
+// and are kept open for the lifetime of the process.
 func (l *Logger) Close() error {
 	return mchlogcore.CloseUDP()
 }

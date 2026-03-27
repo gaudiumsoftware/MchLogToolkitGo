@@ -27,10 +27,8 @@ const (
 var currentVersion = V1
 
 // udpMu protects udpTransport, udpChan, and udpDone from concurrent access.
-// LogSubject holds RLock during the entire channel send to prevent closeLocked
-// from closing the channel mid-send. closeLocked acquires the write lock,
-// which blocks until all RLocks are released, ensuring no goroutine is
-// sending to the channel when it is closed.
+// LogSubject holds RLock during the entire channel send to prevent the channel
+// from being closed mid-send.
 var udpMu sync.RWMutex
 var udpTransport *mchloggelf.UDPTransport
 var udpChan chan *mchloggelf.GELFMessage
@@ -53,19 +51,69 @@ func SetVersion(v LogVersion) {
 // The address should be in "host:port" format (e.g., "graylog.example.com:12201").
 // If compress is true, messages will be GZIP compressed.
 func SetUDPTarget(address string, compress bool) error {
+	// Phase 1: under write lock, close the channel and capture references
+	// to the old worker so we can wait on it without holding the lock.
 	udpMu.Lock()
-	defer udpMu.Unlock()
+	oldDone, oldTransport := detachWorkerLocked()
+	udpMu.Unlock()
 
-	// Close any existing connection to avoid file descriptor leaks
-	closeLocked()
+	// Phase 2: wait for the old worker to drain without holding any lock,
+	// so LogSubject calls are not blocked during the drain.
+	waitAndClose(oldDone, oldTransport)
 
+	// Phase 3: create new transport (network operation, no lock needed)
 	t, err := mchloggelf.NewUDPTransport(address, compress)
 	if err != nil {
 		return err
 	}
+
+	// Phase 4: install new worker under write lock
+	udpMu.Lock()
+	defer udpMu.Unlock()
+
+	// If another SetUDPTarget ran between phase 1 and 4 and installed a new
+	// worker, shut it down first (last caller wins). This wait is bounded:
+	// the write lock prevents new sends, so the worker only drains what is
+	// already in the buffer.
+	innerDone, innerTransport := detachWorkerLocked()
+	if innerDone != nil {
+		<-innerDone
+	}
+	if innerTransport != nil {
+		_ = innerTransport.Close()
+	}
+
 	udpTransport = t
 	startWorkerLocked()
 	return nil
+}
+
+// detachWorkerLocked closes the channel and clears the global references,
+// returning the old done channel and transport so the caller can wait and
+// clean up outside the lock. Must be called with udpMu write lock held.
+// After this call, udpChan is nil so LogSubject will skip UDP sends.
+func detachWorkerLocked() (<-chan struct{}, *mchloggelf.UDPTransport) {
+	if udpChan == nil {
+		return nil, nil
+	}
+	close(udpChan)
+	done := udpDone
+	transport := udpTransport
+	udpChan = nil
+	udpDone = nil
+	udpTransport = nil
+	return done, transport
+}
+
+// waitAndClose waits for the worker to finish draining and closes the transport.
+// Safe to call with nil arguments (no-op).
+func waitAndClose(done <-chan struct{}, transport *mchloggelf.UDPTransport) {
+	if done != nil {
+		<-done
+	}
+	if transport != nil {
+		_ = transport.Close()
+	}
 }
 
 // startWorkerLocked initializes the buffered channel and starts a single worker
@@ -92,24 +140,6 @@ func startWorkerLocked() {
 	}()
 }
 
-// closeLocked stops the worker, drains the channel, and closes the UDP transport.
-// Must be called with udpMu write lock held. The write lock guarantees that no
-// LogSubject goroutine is mid-send (they hold RLock during send), so closing the
-// channel is safe. The worker goroutine uses captured references and does not
-// need the mutex, so waiting on udpDone under the write lock cannot deadlock.
-func closeLocked() {
-	if udpChan != nil {
-		close(udpChan)
-		<-udpDone
-		udpChan = nil
-		udpDone = nil
-	}
-	if udpTransport != nil {
-		_ = udpTransport.Close()
-		udpTransport = nil
-	}
-}
-
 // SetFileOutput enables or disables file-based log output.
 // When disabled, logs are only sent via UDP (if configured).
 func SetFileOutput(enabled bool) {
@@ -117,10 +147,13 @@ func SetFileOutput(enabled bool) {
 }
 
 // CloseUDP closes the UDP worker and transport connection if active.
+// Waits for the worker to drain remaining buffered messages before returning.
 func CloseUDP() error {
 	udpMu.Lock()
-	defer udpMu.Unlock()
-	closeLocked()
+	done, transport := detachWorkerLocked()
+	udpMu.Unlock()
+
+	waitAndClose(done, transport)
 	return nil
 }
 
@@ -137,8 +170,8 @@ func (l *LogType) LogSubject(subject string, content any, errLog error, ascendSt
 		}
 	}
 
-	// Hold RLock for the entire nil-check + send to prevent closeLocked from
-	// closing the channel between the check and the send. The non-blocking
+	// Hold RLock for the entire nil-check + send to prevent detachWorkerLocked
+	// from closing the channel between the check and the send. The non-blocking
 	// select ensures we never block while holding the lock.
 	udpMu.RLock()
 	defer udpMu.RUnlock()
