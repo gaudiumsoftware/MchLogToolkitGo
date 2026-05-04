@@ -8,7 +8,7 @@ import (
 	"github.com/Graylog2/go-gelf/gelf"
 )
 
-func deadline2s() time.Time   { return time.Now().Add(2 * time.Second) }
+func deadline2s() time.Time    { return time.Now().Add(2 * time.Second) }
 func deadline100ms() time.Time { return time.Now().Add(100 * time.Millisecond) }
 
 // TestDatagramLevelMappingAllLevels percorre cada level da toolkit e
@@ -16,7 +16,7 @@ func deadline100ms() time.Time { return time.Now().Add(100 * time.Millisecond) }
 // e o _level_name textual correspondente.
 func TestDatagramLevelMappingAllLevels(t *testing.T) {
 	cases := []struct {
-		level     string
+		level      string
 		wantSyslog int32
 	}{
 		{"fatal", gelf.LOG_CRIT},
