@@ -132,3 +132,69 @@ if err != nil {
     os.Exit(1)
 }
 ```
+
+## Envio para Graylog (V3 - Rede)
+Para ambientes de **dev/qa**, é possível trocar o backend de arquivo por envio direto a um Graylog via **GELF UDP**.
+A API pública do logger não muda: serviços já existentes (que usam V1 por default) seguem funcionando sem alteração.
+
+Para ativar V3, o serviço configura o destino, troca a versão e inicializa normalmente:
+```go
+import (
+    "os"
+
+    mchlogtoolkitgo "github.com/gaudiumsoftware/mchlogtoolkitgo"
+    "github.com/gaudiumsoftware/mchlogtoolkitgo/mchlogcore"
+    "github.com/gaudiumsoftware/mchlogtoolkitgo/mchlogcorev3"
+)
+
+func main() {
+    if err := mchlogcorev3.Configure(mchlogcorev3.NetworkConfig{
+        Addr:   "graylog.dev.internal:12201",
+        Source: "payments-api-qa-" + os.Getenv("POD_NAME"),
+        // DisableGZIP: true, // opcional, default = compressão habilitada
+    }); err != nil {
+        panic(err)
+    }
+    mchlogcore.SetVersion(mchlogcore.V3)
+
+    logger, _ := mchlogtoolkitgo.NewLogger("payments-api", "debug")
+    logger.Initialize()
+    logger.Info("aplicação iniciada e ouvindo na porta 80")
+}
+```
+
+### Campos do `NetworkConfig`
+| Campo         | Obrigatório | Descrição                                                                            |
+|---------------|-------------|--------------------------------------------------------------------------------------|
+| `Addr`        | sim         | Endereço do Graylog no formato `host:porta`.                                         |
+| `Source`      | sim         | Valor do campo GELF `host` (coluna `source` no Graylog). É **fornecido pelo serviço** — a toolkit não autodetecta. Ex.: `payments-api-qa-pod-7f8d2`. Use `mchlogcorev3.DefaultSource()` se quiser apenas o hostname. |
+| `Protocol`    | não         | Default `mchlogcorev3.ProtocolGraylogUDP`.                                            |
+| `DisableGZIP` | não         | Default `false` (gzip habilitado).                                                   |
+
+### Como aparece no Graylog
+| GELF field          | Origem                                       | Coluna/campo no Graylog |
+|---------------------|----------------------------------------------|-------------------------|
+| `host`              | `cfg.Source`                                 | `source` (default)      |
+| `short_message`     | chave `message` do payload                   | `message` (default)     |
+| `level`             | severity syslog (info=6, debug=7, warn=4, error=3, fatal=2) | `level`                 |
+| `_application_name` | parâmetro `service` de `NewLogger`           | `application_name`      |
+| `_log_id`           | `<service>-mchlog-<level>` (espelha pasta dos arquivos V1/V2) | `log_id`                |
+| `_level_name`       | level em texto                               | `level_name`            |
+| `_file`, `_line`    | `runtime.Caller`                             | `file`, `line`          |
+| `_error`            | `errLog.Error()`, quando presente            | `error`                 |
+
+Exemplos de busca:
+- `application_name:payments-api AND level:<=3` — erros de um serviço.
+- `log_id:payments-api-mchlog-info` — equivale ao arquivo `INFO` da V1/V2.
+- `source:*-qa-*` — todos os pods de QA (env embutido em `Source` pelo caller).
+
+### Falhas de envio
+UDP é fire-and-forget. Se o destino estiver inacessível, a toolkit
+**descarta a mensagem silenciosamente** e emite no máximo **uma linha em
+`stderr` a cada 60s** (`mchlogcorev3: GELF UDP send failed: ...`).
+Não há fallback automático para arquivo.
+
+### Quando NÃO usar
+- Em produção, mantenha V1 (default) ou V2: arquivos persistidos em
+  `/applog/<service>/...` continuam sendo a fonte de verdade.
+- V3 é destinado a `dev` e `qa` para concentrar logs no Graylog.
