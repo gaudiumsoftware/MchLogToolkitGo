@@ -1,8 +1,12 @@
 package mchlogcore
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/gaudiumsoftware/mchlogtoolkitgo/mchlogcorev1"
 	"github.com/gaudiumsoftware/mchlogtoolkitgo/mchlogcorev2"
+	"github.com/gaudiumsoftware/mchlogtoolkitgo/mchlogcorev3"
 )
 
 // Asserções de tempo de compilação garantindo que cada backend
@@ -20,6 +24,10 @@ const (
 	V1 LogVersion = iota
 	// V2 — backend de arquivo, formato simples (um arquivo por subject).
 	V2
+	// V3 — backend de rede (família). Protocolos suportados são
+	// configurados via mchlogcorev3.NetworkConfig.Protocol; primeiro
+	// protocolo entregue é GELF UDP para Graylog.
+	V3
 )
 
 var (
@@ -34,10 +42,18 @@ func init() {
 }
 
 // transportFor mapeia uma LogVersion para o Transport correspondente.
-// Centraliza o dispatch para que adicionar uma nova versão (ex.: V3 = rede)
-// signifique apenas estender este switch.
+// Centraliza o dispatch: adicionar uma nova versão significa estender
+// apenas este switch.
+//
+// Para V3, devolvemos a global mchlogcorev3.MchLog. Antes de
+// mchlogcorev3.Initialize esse ponteiro é nil; chamadas via interface
+// permanecem seguras porque os métodos de *graylogUDP toleram receiver
+// nil. Após Initialize, transportFor é re-invocado por InitializeMchLog
+// para refletir o novo ponteiro.
 func transportFor(v LogVersion) Transport {
 	switch v {
+	case V3:
+		return mchlogcorev3.MchLog
 	case V2:
 		return &mchlogcorev2.MchLog
 	default:
@@ -89,15 +105,32 @@ func (l *LogType) Close() error {
 var MchLog LogType
 
 // InitializeMchLog inicializa o backend selecionado com o caminho dado.
-// Para backends de arquivo (V1, V2) o path é o diretório base.
+// Para backends de arquivo (V1, V2) o path é o diretório base. Para V3
+// (rede), o path é usado apenas para extrair o nome do serviço (último
+// segmento, no formato "<basePath>/<service>/").
 func InitializeMchLog(path string) {
-	versionName := "V1"
+	var versionName string
+	var initErr error
+
 	switch currentVersion {
+	case V3:
+		versionName = "V3"
+		initErr = mchlogcorev3.Initialize(path)
 	case V2:
 		versionName = "V2"
 		mchlogcorev2.InitializeMchLog(path)
 	default:
+		versionName = "V1"
 		mchlogcorev1.InitializeMchLog(path)
+	}
+
+	// Re-vincula current ao transporte agora inicializado. Necessário
+	// para V3, cuja global passou de nil para o ponteiro válido.
+	current = transportFor(currentVersion)
+
+	if initErr != nil {
+		fmt.Fprintf(os.Stderr, "mchlogcore: %s initialization failed: %v\n", versionName, initErr)
+		return
 	}
 
 	// Primeiro log informa qual versão foi inicializada.
