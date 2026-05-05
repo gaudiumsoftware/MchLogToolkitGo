@@ -41,7 +41,7 @@ func TestLevelToSyslogUnknownDefaultsToInfo(t *testing.T) {
 // que reproduz a saída do formatLog do logger.go.
 func TestBuildGELFMessageRequiredFields(t *testing.T) {
 	payload := []byte(`{"message":"hello","level":"info","source":"foo.go","line":"42","trace":""}`)
-	msg, err := buildGELFMessage("payments-api", "info", payload, nil, NetworkConfig{
+	msg, err := buildGELFMessage("payments-api", "info", payload, nil, BackendConfig{
 		Source: "pod-1",
 	})
 	if err != nil {
@@ -68,7 +68,7 @@ func TestBuildGELFMessageRequiredFields(t *testing.T) {
 // _application_name, _log_id, _level_name, _file e _line.
 func TestBuildGELFMessageCustomFields(t *testing.T) {
 	payload := []byte(`{"message":"hi","level":"debug","source":"internal/foo.go","line":"99","trace":"abc"}`)
-	msg, err := buildGELFMessage("payments-api", "debug", payload, nil, NetworkConfig{
+	msg, err := buildGELFMessage("payments-api", "debug", payload, nil, BackendConfig{
 		Source: "pod-1",
 	})
 	if err != nil {
@@ -99,7 +99,7 @@ func TestBuildGELFMessageCustomFields(t *testing.T) {
 // _error e mantém os demais campos.
 func TestBuildGELFMessageWithError(t *testing.T) {
 	payload := []byte(`{"message":"boom","level":"error","source":"x.go","line":"7","trace":""}`)
-	msg, err := buildGELFMessage("svc", "error", payload, errors.New("kaboom"), NetworkConfig{
+	msg, err := buildGELFMessage("svc", "error", payload, errors.New("kaboom"), BackendConfig{
 		Source: "pod-1",
 	})
 	if err != nil {
@@ -124,7 +124,7 @@ func TestBuildGELFMessageAcceptsMap(t *testing.T) {
 		"message": "MchLogToolkit initialized",
 		"version": "V3",
 	}
-	msg, err := buildGELFMessage("svc", "info", content, nil, NetworkConfig{Source: "pod-1"})
+	msg, err := buildGELFMessage("svc", "info", content, nil, BackendConfig{Source: "pod-1"})
 	if err != nil {
 		t.Fatalf("build failed: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestBuildGELFMessageAcceptsMap(t *testing.T) {
 // "message" usa string vazia em Short e não falha.
 func TestBuildGELFMessageMissingMessage(t *testing.T) {
 	payload := []byte(`{"level":"info"}`)
-	msg, err := buildGELFMessage("svc", "info", payload, nil, NetworkConfig{Source: "pod-1"})
+	msg, err := buildGELFMessage("svc", "info", payload, nil, BackendConfig{Source: "pod-1"})
 	if err != nil {
 		t.Fatalf("build failed: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestBuildGELFMessageMissingMessage(t *testing.T) {
 // malformado produz erro em vez de panic.
 func TestBuildGELFMessageInvalidJSONReturnsError(t *testing.T) {
 	payload := []byte(`{not json`)
-	if _, err := buildGELFMessage("svc", "info", payload, nil, NetworkConfig{Source: "pod-1"}); err == nil {
+	if _, err := buildGELFMessage("svc", "info", payload, nil, BackendConfig{Source: "pod-1"}); err == nil {
 		t.Fatalf("expected error on invalid JSON")
 	}
 }
@@ -162,7 +162,7 @@ func TestBuildGELFMessageInvalidJSONReturnsError(t *testing.T) {
 // serializa em JSON válido com Extra inline (formato exigido pelo GELF).
 func TestBuildGELFMessageSerializable(t *testing.T) {
 	payload := []byte(`{"message":"x","level":"info","source":"a.go","line":"1","trace":""}`)
-	msg, err := buildGELFMessage("svc", "info", payload, nil, NetworkConfig{Source: "pod-1"})
+	msg, err := buildGELFMessage("svc", "info", payload, nil, BackendConfig{Source: "pod-1"})
 	if err != nil {
 		t.Fatalf("build failed: %v", err)
 	}

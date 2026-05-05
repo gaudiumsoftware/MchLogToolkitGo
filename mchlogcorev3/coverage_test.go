@@ -33,7 +33,7 @@ func TestDatagramLevelMappingAllLevels(t *testing.T) {
 			addr, conn := listenUDP(t)
 			defer conn.Close()
 
-			if err := Configure(NetworkConfig{Addr: addr, Source: "pod-1"}); err != nil {
+			if err := Configure(BackendConfig{Protocol: ProtocolGraylogUDP, Addr: addr, Source: "pod-1"}); err != nil {
 				t.Fatalf("Configure: %v", err)
 			}
 			if err := Initialize("/applog/svc/"); err != nil {
@@ -69,7 +69,7 @@ func TestDatagramGZIPDisabled(t *testing.T) {
 	addr, conn := listenUDP(t)
 	defer conn.Close()
 
-	if err := Configure(NetworkConfig{Addr: addr, Source: "pod-1", DisableGZIP: true}); err != nil {
+	if err := Configure(BackendConfig{Protocol: ProtocolGraylogUDP, Addr: addr, Source: "pod-1", DisableGZIP: true}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	if err := Initialize("/applog/svc/"); err != nil {
@@ -85,7 +85,7 @@ func TestDatagramGZIPDisabled(t *testing.T) {
 	// um listener próprio.
 	addr2, conn2 := listenUDP(t)
 	defer conn2.Close()
-	if err := Configure(NetworkConfig{Addr: addr2, Source: "pod-1", DisableGZIP: true}); err != nil {
+	if err := Configure(BackendConfig{Protocol: ProtocolGraylogUDP, Addr: addr2, Source: "pod-1", DisableGZIP: true}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	_ = MchLog.Close()
@@ -120,7 +120,7 @@ func TestDatagramGZIPEnabled(t *testing.T) {
 	addr, conn := listenUDP(t)
 	defer conn.Close()
 
-	if err := Configure(NetworkConfig{Addr: addr, Source: "pod-1"}); err != nil {
+	if err := Configure(BackendConfig{Protocol: ProtocolGraylogUDP, Addr: addr, Source: "pod-1"}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	if err := Initialize("/applog/svc/"); err != nil {
@@ -149,7 +149,7 @@ func TestLogSubjectEmptySubjectIgnored(t *testing.T) {
 	addr, conn := listenUDP(t)
 	defer conn.Close()
 
-	if err := Configure(NetworkConfig{Addr: addr, Source: "pod-1"}); err != nil {
+	if err := Configure(BackendConfig{Protocol: ProtocolGraylogUDP, Addr: addr, Source: "pod-1"}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	if err := Initialize("/applog/svc/"); err != nil {

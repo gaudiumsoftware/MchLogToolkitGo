@@ -24,9 +24,10 @@ const (
 	V1 LogVersion = iota
 	// V2 — backend de arquivo, formato simples (um arquivo por subject).
 	V2
-	// V3 — backend de rede (família). Protocolos suportados são
-	// configurados via mchlogcorev3.NetworkConfig.Protocol; primeiro
-	// protocolo entregue é GELF UDP para Graylog.
+	// V3 — backend unificado. Suporta arquivo (mesmo layout do V2) e
+	// rede (GELF UDP) selecionados via mchlogcorev3.BackendConfig.Protocol.
+	// Outros protocolos (graylog-tcp, syslog, splunk-hec, ...) podem ser
+	// adicionados sem bumpar o enum.
 	V3
 )
 
@@ -45,15 +46,14 @@ func init() {
 // Centraliza o dispatch: adicionar uma nova versão significa estender
 // apenas este switch.
 //
-// Para V3, devolvemos a global mchlogcorev3.MchLog. Antes de
-// mchlogcorev3.Initialize esse ponteiro é nil; chamadas via interface
-// permanecem seguras porque os métodos de *graylogUDP toleram receiver
-// nil. Após Initialize, transportFor é re-invocado por InitializeMchLog
-// para refletir o novo ponteiro.
+// Para V3, devolvemos &mchlogcorev3.MchLog. O facade interno do V3
+// (LogType) tolera estado pré-Initialize (early-return em LogSubject /
+// GetFileNameFromStreamName / Close), então chamadas antes de
+// InitializeMchLog não panicam.
 func transportFor(v LogVersion) Transport {
 	switch v {
 	case V3:
-		return mchlogcorev3.MchLog
+		return &mchlogcorev3.MchLog
 	case V2:
 		return &mchlogcorev2.MchLog
 	default:
@@ -105,9 +105,10 @@ func (l *LogType) Close() error {
 var MchLog LogType
 
 // InitializeMchLog inicializa o backend selecionado com o caminho dado.
-// Para backends de arquivo (V1, V2) o path é o diretório base. Para V3
-// (rede), o path é usado apenas para extrair o nome do serviço (último
-// segmento, no formato "<basePath>/<service>/").
+// Em todos os backends o path tem a forma "<basePath>/<service>/":
+//   - V1, V2 e V3-ProtocolFile usam o caminho como diretório base de arquivos.
+//   - V3-ProtocolGraylogUDP usa o último segmento apenas para extrair
+//     o nome do serviço; o destino real é cfg.Addr.
 func InitializeMchLog(path string) {
 	var versionName string
 	var initErr error

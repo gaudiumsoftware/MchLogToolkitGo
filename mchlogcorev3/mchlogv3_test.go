@@ -57,9 +57,10 @@ func TestGraylogUDPSendsValidGELF(t *testing.T) {
 	addr, conn := listenUDP(t)
 	defer conn.Close()
 
-	if err := Configure(NetworkConfig{
-		Addr:   addr,
-		Source: "pod-1",
+	if err := Configure(BackendConfig{
+		Protocol: ProtocolGraylogUDP,
+		Addr:     addr,
+		Source:   "pod-1",
 	}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
@@ -106,7 +107,7 @@ func TestGraylogUDPGetFileNameFromStreamName(t *testing.T) {
 	addr, conn := listenUDP(t)
 	defer conn.Close()
 
-	if err := Configure(NetworkConfig{Addr: addr, Source: "pod-1"}); err != nil {
+	if err := Configure(BackendConfig{Protocol: ProtocolGraylogUDP, Addr: addr, Source: "pod-1"}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	if err := Initialize("/applog/payments-api/"); err != nil {
@@ -129,7 +130,7 @@ func TestGraylogUDPCloseIdempotent(t *testing.T) {
 	addr, conn := listenUDP(t)
 	defer conn.Close()
 
-	if err := Configure(NetworkConfig{Addr: addr, Source: "pod-1"}); err != nil {
+	if err := Configure(BackendConfig{Protocol: ProtocolGraylogUDP, Addr: addr, Source: "pod-1"}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	if err := Initialize("/applog/svc/"); err != nil {

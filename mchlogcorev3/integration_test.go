@@ -23,9 +23,10 @@ func TestIntegrationSendsToRealGraylog(t *testing.T) {
 
 	t.Cleanup(resetConfig)
 
-	if err := Configure(NetworkConfig{
-		Addr:   addr,
-		Source: "mchlog-integration-test",
+	if err := Configure(BackendConfig{
+		Protocol: ProtocolGraylogUDP,
+		Addr:     addr,
+		Source:   "mchlog-integration-test",
 	}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}

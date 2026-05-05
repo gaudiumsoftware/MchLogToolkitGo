@@ -46,7 +46,7 @@ func TestSendFailureDoesNotPanic(t *testing.T) {
 	addr, conn := listenUDP(t)
 	defer conn.Close()
 
-	if err := Configure(NetworkConfig{Addr: addr, Source: "pod-1"}); err != nil {
+	if err := Configure(BackendConfig{Protocol: ProtocolGraylogUDP, Addr: addr, Source: "pod-1"}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	if err := Initialize("/applog/svc/"); err != nil {
@@ -70,7 +70,7 @@ func TestRateLimitedWarnOneLinePerWindow(t *testing.T) {
 	addr, conn := listenUDP(t)
 	defer conn.Close()
 
-	if err := Configure(NetworkConfig{Addr: addr, Source: "pod-1"}); err != nil {
+	if err := Configure(BackendConfig{Protocol: ProtocolGraylogUDP, Addr: addr, Source: "pod-1"}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	if err := Initialize("/applog/svc/"); err != nil {
@@ -97,7 +97,7 @@ func TestRateLimitedWarnEmitsAgainAfterWindow(t *testing.T) {
 	addr, conn := listenUDP(t)
 	defer conn.Close()
 
-	if err := Configure(NetworkConfig{Addr: addr, Source: "pod-1"}); err != nil {
+	if err := Configure(BackendConfig{Protocol: ProtocolGraylogUDP, Addr: addr, Source: "pod-1"}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	if err := Initialize("/applog/svc/"); err != nil {
@@ -107,10 +107,18 @@ func TestRateLimitedWarnEmitsAgainAfterWindow(t *testing.T) {
 
 	got := captureStderr(t, func() {
 		MchLog.LogSubject("info", 123, nil) // 1ª falha → warn
-		// força janela a "expirar" zerando lastWarn (mesmo pacote, OK).
-		MchLog.mu.Lock()
-		MchLog.lastWarn = time.Time{}
-		MchLog.mu.Unlock()
+		// força janela a "expirar" zerando lastWarn no backend interno
+		// (mesmo pacote, acesso a campo unexported permitido).
+		MchLog.mu.RLock()
+		impl := MchLog.impl
+		MchLog.mu.RUnlock()
+		g, ok := impl.(*graylogUDP)
+		if !ok {
+			t.Fatalf("expected *graylogUDP, got %T", impl)
+		}
+		g.mu.Lock()
+		g.lastWarn = time.Time{}
+		g.mu.Unlock()
 		MchLog.LogSubject("info", 123, nil) // 2ª falha → novo warn
 	})
 
@@ -139,7 +147,7 @@ func TestNotConfiguredErrorMessage(t *testing.T) {
 func TestInitializeBadServicePath(t *testing.T) {
 	t.Cleanup(resetConfig)
 
-	if err := Configure(NetworkConfig{Addr: "127.0.0.1:1", Source: "pod-1"}); err != nil {
+	if err := Configure(BackendConfig{Protocol: ProtocolGraylogUDP, Addr: "127.0.0.1:1", Source: "pod-1"}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	if err := Initialize(""); err == nil {

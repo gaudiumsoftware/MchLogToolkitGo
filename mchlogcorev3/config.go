@@ -1,7 +1,13 @@
-// Package mchlogcorev3 implementa o backend de rede da toolkit.
-// Atualmente entrega logs via GELF UDP para o Graylog. Outros protocolos
-// (graylog-tcp, syslog, splunk-hec, etc.) podem ser adicionados expondo
-// novos valores de Protocol e a implementação correspondente.
+// Package mchlogcorev3 é o backend unificado da toolkit. Suporta múltiplos
+// protocolos selecionados por BackendConfig.Protocol:
+//
+//   - ProtocolFile: grava em arquivo no mesmo layout do mchlogcorev2
+//     (<basePath>/<service>/<level>/<level>.log) e mesma JSON shape.
+//   - ProtocolGraylogUDP: envia em formato GELF via UDP para o Graylog.
+//
+// Novos protocolos (graylog-tcp, syslog, splunk-hec, etc.) podem ser
+// adicionados expondo novos valores de Protocol e a implementação
+// correspondente; a API pública não muda.
 package mchlogcorev3
 
 import (
@@ -10,57 +16,65 @@ import (
 	"sync"
 )
 
-// Protocol identifica o protocolo de rede usado para enviar logs.
-// Adicionar um novo protocolo significa criar uma nova constante e
-// estender o dispatch interno; o resto da API pública não muda.
+// Protocol identifica o backend efetivo usado para persistir/enviar logs.
 type Protocol string
 
 const (
+	// ProtocolFile grava logs em arquivo. Layout e JSON shape são os
+	// mesmos do mchlogcorev2; o caller controla o caminho via
+	// Logger.SetPath (ou usa o default /applog/).
+	ProtocolFile Protocol = "file"
+
 	// ProtocolGraylogUDP envia logs em formato GELF via UDP.
 	ProtocolGraylogUDP Protocol = "graylog-udp"
 )
 
-// NetworkConfig agrupa parâmetros de transporte de rede.
-// Addr e Source são obrigatórios. Source é fornecido pelo serviço
-// consumidor (tipicamente o nome do pod ou uma composição como
-// "<service>-<env>-<pod>"); a toolkit não tenta autodetectar.
-type NetworkConfig struct {
-	// Protocol é o protocolo de rede. Default: ProtocolGraylogUDP.
+// BackendConfig agrupa todos os parâmetros aceitos pelo V3. Os campos
+// relevantes dependem de Protocol — campos de outros protocolos são
+// ignorados pela validação.
+type BackendConfig struct {
+	// Protocol seleciona o backend. Default: ProtocolFile.
 	Protocol Protocol
-	// Addr é o endereço do destino no formato "host:porta". Obrigatório.
+
+	// Addr é o endereço do destino no formato "host:porta".
+	// Obrigatório quando Protocol = ProtocolGraylogUDP.
 	Addr string
-	// Source é o valor que será gravado no campo GELF "host"
-	// (a coluna "source" no Graylog). Obrigatório, fornecido pelo caller.
+
+	// Source é o valor gravado no campo GELF "host" (coluna "source"
+	// no Graylog). Obrigatório quando Protocol = ProtocolGraylogUDP.
+	// Fornecido pelo serviço (a toolkit não autodetecta).
 	Source string
-	// DisableGZIP desabilita a compressão GZIP do GELF UDP.
-	// Por padrão (zero value), GZIP fica habilitado.
+
+	// DisableGZIP desabilita a compressão GZIP do GELF UDP. Default
+	// (zero value) = GZIP habilitado. Aplica apenas a ProtocolGraylogUDP.
 	DisableGZIP bool
 }
 
 var (
 	cfgMu      sync.RWMutex
-	activeCfg  NetworkConfig
+	activeCfg  BackendConfig
 	configured bool
 )
 
-// Configure normaliza e armazena a configuração de rede que será usada
-// pelo transporte. Aplica defaults a Protocol; valida campos obrigatórios.
-// Retorna erro se Addr ou Source estiverem vazios, ou se Protocol for
-// desconhecido.
-func Configure(cfg NetworkConfig) error {
-	if cfg.Addr == "" {
-		return errors.New("mchlogcorev3: Addr is required")
-	}
-	if cfg.Source == "" {
-		return errors.New("mchlogcorev3: Source is required (caller-provided)")
+// Configure normaliza e armazena a configuração que será usada pelo
+// backend. Aplica default a Protocol e valida os campos obrigatórios
+// para o protocolo selecionado.
+func Configure(cfg BackendConfig) error {
+	if cfg.Protocol == "" {
+		cfg.Protocol = ProtocolFile
 	}
 
-	if cfg.Protocol == "" {
-		cfg.Protocol = ProtocolGraylogUDP
-	}
 	switch cfg.Protocol {
+	case ProtocolFile:
+		// arquivo: nada obrigatório aqui; o path vem via Logger.SetPath
+		// e o nome do serviço via NewLogger.
 	case ProtocolGraylogUDP:
-		// suportado
+		if cfg.Addr == "" {
+			return errors.New("mchlogcorev3: Addr is required for ProtocolGraylogUDP")
+		}
+		if cfg.Source == "" {
+			return errors.New("mchlogcorev3: Source is required for ProtocolGraylogUDP (caller-provided)")
+		}
 	default:
 		return errors.New("mchlogcorev3: unknown Protocol: " + string(cfg.Protocol))
 	}
@@ -73,9 +87,9 @@ func Configure(cfg NetworkConfig) error {
 }
 
 // ActiveConfig retorna uma cópia da configuração ativa. Útil para
-// testes e para o transporte ler os parâmetros já normalizados.
-// Antes de Configure ser chamado, devolve um NetworkConfig zero-valued.
-func ActiveConfig() NetworkConfig {
+// testes e para o backend ler os parâmetros já normalizados.
+// Antes de Configure ser chamado, devolve um BackendConfig zero-valued.
+func ActiveConfig() BackendConfig {
 	cfgMu.RLock()
 	defer cfgMu.RUnlock()
 	return activeCfg
@@ -90,7 +104,8 @@ func IsConfigured() bool {
 
 // DefaultSource é um helper para callers que não querem compor o Source
 // manualmente. Devolve o hostname do sistema (os.Hostname) ou "unknown"
-// caso a chamada falhe ou retorne string vazia.
+// caso a chamada falhe ou retorne string vazia. Útil apenas para
+// ProtocolGraylogUDP.
 func DefaultSource() string {
 	if h, err := os.Hostname(); err == nil && h != "" {
 		return h
@@ -102,7 +117,7 @@ func DefaultSource() string {
 // (não exportado).
 func resetConfig() {
 	cfgMu.Lock()
-	activeCfg = NetworkConfig{}
+	activeCfg = BackendConfig{}
 	configured = false
 	cfgMu.Unlock()
 }

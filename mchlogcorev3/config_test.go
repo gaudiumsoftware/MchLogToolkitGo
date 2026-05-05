@@ -13,32 +13,70 @@ func TestDefaultSource(t *testing.T) {
 	}
 }
 
-// TestConfigureAppliesDefaults garante que Protocol recebe valor default
-// quando não especificado e que GZIP fica habilitado por padrão. Source e
-// Addr não são auto-preenchidos.
-func TestConfigureAppliesDefaults(t *testing.T) {
+// TestConfigureDefaultProtocolIsFile garante que sem Protocol explícito
+// o default aplicado é ProtocolFile (caminho de menor surpresa para
+// callers migrando de V2).
+func TestConfigureDefaultProtocolIsFile(t *testing.T) {
 	t.Cleanup(resetConfig)
 
-	cfg := NetworkConfig{
-		Addr:   "graylog.dev:12201",
-		Source: "svc-x",
+	if err := Configure(BackendConfig{}); err != nil {
+		t.Fatalf("Configure with empty config should be valid for file: %v", err)
 	}
-	if err := Configure(cfg); err != nil {
+	if got := ActiveConfig().Protocol; got != ProtocolFile {
+		t.Errorf("default Protocol = %q, want %q", got, ProtocolFile)
+	}
+}
+
+// TestConfigureFileNoRequiredFields garante que ProtocolFile não exige
+// Addr nem Source (essas são exclusivas do GraylogUDP).
+func TestConfigureFileNoRequiredFields(t *testing.T) {
+	t.Cleanup(resetConfig)
+
+	if err := Configure(BackendConfig{Protocol: ProtocolFile}); err != nil {
+		t.Fatalf("Configure should accept file with no fields: %v", err)
+	}
+}
+
+// TestConfigureGraylogUDPRequiresAddr.
+func TestConfigureGraylogUDPRequiresAddr(t *testing.T) {
+	t.Cleanup(resetConfig)
+
+	err := Configure(BackendConfig{Protocol: ProtocolGraylogUDP, Source: "svc-x"})
+	if err == nil {
+		t.Fatalf("Configure should reject empty Addr for ProtocolGraylogUDP")
+	}
+}
+
+// TestConfigureGraylogUDPRequiresSource.
+func TestConfigureGraylogUDPRequiresSource(t *testing.T) {
+	t.Cleanup(resetConfig)
+
+	err := Configure(BackendConfig{Protocol: ProtocolGraylogUDP, Addr: "graylog.dev:12201"})
+	if err == nil {
+		t.Fatalf("Configure should reject empty Source for ProtocolGraylogUDP")
+	}
+}
+
+// TestConfigureGraylogUDPHappy garante que o caminho válido aceita config.
+func TestConfigureGraylogUDPHappy(t *testing.T) {
+	t.Cleanup(resetConfig)
+
+	if err := Configure(BackendConfig{
+		Protocol: ProtocolGraylogUDP,
+		Addr:     "graylog.dev:12201",
+		Source:   "svc-x",
+	}); err != nil {
 		t.Fatalf("Configure failed: %v", err)
 	}
-
 	got := ActiveConfig()
 	if got.Protocol != ProtocolGraylogUDP {
-		t.Errorf("Protocol default mismatch: got %q want %q", got.Protocol, ProtocolGraylogUDP)
+		t.Errorf("Protocol = %q", got.Protocol)
 	}
 	if got.DisableGZIP {
 		t.Errorf("GZIP must be enabled by default (DisableGZIP=false)")
 	}
-	if got.Source != "svc-x" {
-		t.Errorf("Source must not be auto-filled: got %q", got.Source)
-	}
 	if got.Addr != "graylog.dev:12201" {
-		t.Errorf("Addr mismatch: got %q", got.Addr)
+		t.Errorf("Addr = %q", got.Addr)
 	}
 }
 
@@ -47,7 +85,8 @@ func TestConfigureAppliesDefaults(t *testing.T) {
 func TestConfigureDisableGZIPRespected(t *testing.T) {
 	t.Cleanup(resetConfig)
 
-	if err := Configure(NetworkConfig{
+	if err := Configure(BackendConfig{
+		Protocol:    ProtocolGraylogUDP,
 		Addr:        "graylog.dev:12201",
 		Source:      "svc-x",
 		DisableGZIP: true,
@@ -59,38 +98,12 @@ func TestConfigureDisableGZIPRespected(t *testing.T) {
 	}
 }
 
-// TestConfigureRejectsEmptyAddr garante validação obrigatória de Addr.
-func TestConfigureRejectsEmptyAddr(t *testing.T) {
-	t.Cleanup(resetConfig)
-
-	err := Configure(NetworkConfig{Source: "svc-x"})
-	if err == nil {
-		t.Fatalf("Configure should reject empty Addr")
-	}
-}
-
-// TestConfigureRejectsEmptySource garante validação obrigatória de Source.
-// Source é caller-provided por design (toolkit não autodetecta).
-func TestConfigureRejectsEmptySource(t *testing.T) {
-	t.Cleanup(resetConfig)
-
-	err := Configure(NetworkConfig{Addr: "graylog.dev:12201"})
-	if err == nil {
-		t.Fatalf("Configure should reject empty Source")
-	}
-}
-
-// TestConfigureRejectsUnknownProtocol garante que protocolos não suportados
-// retornem erro (futuro-proofing para quando outros protocolos forem
-// adicionados).
+// TestConfigureRejectsUnknownProtocol garante futuro-proofing para
+// quando outros protocolos forem adicionados.
 func TestConfigureRejectsUnknownProtocol(t *testing.T) {
 	t.Cleanup(resetConfig)
 
-	err := Configure(NetworkConfig{
-		Protocol: "graylog-tcp",
-		Addr:     "graylog.dev:12201",
-		Source:   "svc-x",
-	})
+	err := Configure(BackendConfig{Protocol: "graylog-tcp"})
 	if err == nil {
 		t.Fatalf("Configure should reject unknown protocol")
 	}
@@ -105,5 +118,8 @@ func TestActiveConfigBeforeConfigure(t *testing.T) {
 	got := ActiveConfig()
 	if got.Addr != "" || got.Source != "" {
 		t.Errorf("ActiveConfig before Configure should be zero-valued, got %+v", got)
+	}
+	if IsConfigured() {
+		t.Errorf("IsConfigured should be false before Configure")
 	}
 }
