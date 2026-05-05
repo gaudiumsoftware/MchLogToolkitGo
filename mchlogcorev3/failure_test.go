@@ -63,8 +63,11 @@ func TestSendFailureDoesNotPanic(t *testing.T) {
 	MchLog.LogSubject("info", 123, nil)
 }
 
-// TestRateLimitedWarnOneLinePerWindow garante que 100 falhas de envio
-// dentro da janela produzem exatamente uma linha em stderr.
+// TestRateLimitedWarnOneLinePerWindow garante que 100 falhas seguidas
+// dentro da janela de warnWindow produzem exatamente uma linha em
+// stderr. O caminho exercitado aqui é a falha em buildGELFMessage
+// (content type não suportado); a falha em writer.WriteMessage é
+// coberta separadamente por TestWriterWriteMessageFailureWarns.
 func TestRateLimitedWarnOneLinePerWindow(t *testing.T) {
 	t.Cleanup(resetConfig)
 	addr, conn := listenUDP(t)
@@ -152,5 +155,93 @@ func TestInitializeBadServicePath(t *testing.T) {
 	}
 	if err := Initialize(""); err == nil {
 		t.Fatalf("expected error for empty path")
+	}
+}
+
+// TestInitializeDialFailureReturnsError cobre o caminho em que
+// gelf.NewWriter falha (Addr malformado, sem porta) e Initialize
+// devolve o erro embrulhado em "dial GELF UDP %s: %w".
+func TestInitializeDialFailureReturnsError(t *testing.T) {
+	t.Cleanup(resetConfig)
+
+	if err := Configure(DestinationConfig{
+		Protocol: ProtocolGraylogUDP,
+		Addr:     "no-port-no-colon",
+		Source:   "pod-1",
+	}); err != nil {
+		t.Fatalf("Configure: %v", err)
+	}
+	err := Initialize("/applog/svc/")
+	if err == nil {
+		t.Fatalf("expected dial error for malformed Addr")
+	}
+	if !strings.Contains(err.Error(), "dial GELF UDP") {
+		t.Errorf("error should mention dial: %q", err.Error())
+	}
+}
+
+// TestWriterWriteMessageFailureWarns garante que uma falha em
+// writer.WriteMessage (não em buildGELFMessage) também aciona
+// warnOnce. Forçamos a falha fechando o socket subjacente do
+// gelf.Writer antes de chamar LogSubject — o WriteMessage tenta
+// escrever em conexão fechada e devolve erro.
+func TestWriterWriteMessageFailureWarns(t *testing.T) {
+	t.Cleanup(resetConfig)
+
+	addr, conn := listenUDP(t)
+	defer conn.Close()
+
+	if err := Configure(DestinationConfig{Protocol: ProtocolGraylogUDP, Addr: addr, Source: "pod-1"}); err != nil {
+		t.Fatalf("Configure: %v", err)
+	}
+	if err := Initialize("/applog/svc/"); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	g, ok := MchLog.impl.(*graylogUDP)
+	if !ok {
+		t.Fatalf("expected *graylogUDP, got %T", MchLog.impl)
+	}
+
+	// Fecha o writer subjacente sem mexer no flag g.closed (replica a
+	// situação em que a conexão UDP foi perdida, mas o transporte ainda
+	// está ativo do ponto de vista do facade).
+	if err := g.writer.Close(); err != nil {
+		t.Fatalf("writer.Close: %v", err)
+	}
+
+	got := captureStderr(t, func() {
+		MchLog.LogSubject("info", []byte(`{"message":"after close"}`), nil)
+	})
+	if !strings.Contains(got, "GELF UDP send failed") {
+		t.Errorf("expected warn line on writer failure; stderr:\n%s", got)
+	}
+}
+
+// TestLogTypeLogSubjectBeforeInitialize garante que o facade do V3
+// (mchlogcorev3.MchLog) é seguro de usar antes de Initialize:
+// LogSubject vira no-op e GetFileNameFromStreamName devolve "".
+func TestLogTypeLogSubjectBeforeInitialize(t *testing.T) {
+	t.Cleanup(resetConfig)
+	resetConfig()
+
+	// Garante que MchLog.impl está nil (pode ter sido populado por
+	// um teste anterior se a ordem mudar).
+	MchLog.mu.Lock()
+	MchLog.impl = nil
+	MchLog.mu.Unlock()
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("LogSubject before Initialize panicked: %v", r)
+		}
+	}()
+	MchLog.LogSubject("info", []byte(`{"message":"x"}`), nil) // no-op
+
+	if got := MchLog.GetFileNameFromStreamName("info"); got != "" {
+		t.Errorf("GetFileNameFromStreamName before Initialize = %q, want empty", got)
+	}
+	if err := MchLog.Close(); err != nil {
+		t.Errorf("Close before Initialize = %v, want nil", err)
 	}
 }

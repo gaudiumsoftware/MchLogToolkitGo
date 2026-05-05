@@ -115,6 +115,11 @@ func DefaultSource() string {
 
 // resetConfig limpa o estado de configuração. Usado apenas em testes
 // (não exportado).
+//
+// Os testes do pacote NÃO usam t.Parallel: activeCfg, MchLog.impl e o
+// global de mchlogcorev2 são compartilhados, então rodar testes em
+// paralelo causaria interferência. Cada teste chama
+// t.Cleanup(resetConfig) para deixar o estado pronto para o próximo.
 func resetConfig() {
 	cfgMu.Lock()
 	activeCfg = DestinationConfig{}
