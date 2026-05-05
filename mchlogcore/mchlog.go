@@ -25,7 +25,7 @@ const (
 	// V2 — backend de arquivo, formato simples (um arquivo por subject).
 	V2
 	// V3 — backend unificado. Suporta arquivo (mesmo layout do V2) e
-	// rede (GELF UDP) selecionados via mchlogcorev3.BackendConfig.Protocol.
+	// rede (GELF UDP) selecionados via mchlogcorev3.DestinationConfig.Protocol.
 	// Outros protocolos (graylog-tcp, syslog, splunk-hec, ...) podem ser
 	// adicionados sem bumpar o enum.
 	V3

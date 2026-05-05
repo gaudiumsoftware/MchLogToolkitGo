@@ -4,7 +4,7 @@ import (
 	"github.com/gaudiumsoftware/mchlogtoolkitgo/mchlogcorev2"
 )
 
-// fileBackend é a estratégia de arquivo do V3. Internamente delega
+// fileDestination é a estratégia de arquivo do V3. Internamente delega
 // para mchlogcorev2.MchLog, preservando integralmente o layout
 // (<basePath>/<service>/<level>/<level>.log) e a JSON shape do V2.
 //
@@ -13,25 +13,25 @@ import (
 // que serviços migrem de V2 para V3 sem alterar a operação. Quando
 // V1/V2 forem removidos no futuro, a lógica do V2 pode ser inlineada
 // aqui sem mudar a API pública do V3.
-type fileBackend struct {
+type fileDestination struct {
 	inner *mchlogcorev2.LogType
 }
 
-// newFileBackend inicializa o V2 subjacente com o path recebido e
+// newFileDestination inicializa o V2 subjacente com o path recebido e
 // devolve um wrapper pronto para uso.
-func newFileBackend(path string) *fileBackend {
+func newFileDestination(path string) *fileDestination {
 	mchlogcorev2.InitializeMchLog(path)
-	return &fileBackend{inner: &mchlogcorev2.MchLog}
+	return &fileDestination{inner: &mchlogcorev2.MchLog}
 }
 
-func (f *fileBackend) LogSubject(subject string, content any, errLog error, ascendStackFrame ...int) {
+func (f *fileDestination) LogSubject(subject string, content any, errLog error, ascendStackFrame ...int) {
 	if f == nil || f.inner == nil {
 		return
 	}
 	f.inner.LogSubject(subject, content, errLog, ascendStackFrame...)
 }
 
-func (f *fileBackend) GetFileNameFromStreamName(subject string) string {
+func (f *fileDestination) GetFileNameFromStreamName(subject string) string {
 	if f == nil || f.inner == nil {
 		return ""
 	}
@@ -42,6 +42,6 @@ func (f *fileBackend) GetFileNameFromStreamName(subject string) string {
 // prévia de não alterar V1/V2). O sistema operacional libera os FDs
 // no encerramento do processo, comportamento idêntico ao uso direto
 // de mchlogcorev2.
-func (f *fileBackend) Close() error {
+func (f *fileDestination) Close() error {
 	return nil
 }

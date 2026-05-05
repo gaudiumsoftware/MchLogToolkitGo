@@ -46,7 +46,7 @@ func TestSendFailureDoesNotPanic(t *testing.T) {
 	addr, conn := listenUDP(t)
 	defer conn.Close()
 
-	if err := Configure(BackendConfig{Protocol: ProtocolGraylogUDP, Addr: addr, Source: "pod-1"}); err != nil {
+	if err := Configure(DestinationConfig{Protocol: ProtocolGraylogUDP, Addr: addr, Source: "pod-1"}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	if err := Initialize("/applog/svc/"); err != nil {
@@ -70,7 +70,7 @@ func TestRateLimitedWarnOneLinePerWindow(t *testing.T) {
 	addr, conn := listenUDP(t)
 	defer conn.Close()
 
-	if err := Configure(BackendConfig{Protocol: ProtocolGraylogUDP, Addr: addr, Source: "pod-1"}); err != nil {
+	if err := Configure(DestinationConfig{Protocol: ProtocolGraylogUDP, Addr: addr, Source: "pod-1"}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	if err := Initialize("/applog/svc/"); err != nil {
@@ -97,7 +97,7 @@ func TestRateLimitedWarnEmitsAgainAfterWindow(t *testing.T) {
 	addr, conn := listenUDP(t)
 	defer conn.Close()
 
-	if err := Configure(BackendConfig{Protocol: ProtocolGraylogUDP, Addr: addr, Source: "pod-1"}); err != nil {
+	if err := Configure(DestinationConfig{Protocol: ProtocolGraylogUDP, Addr: addr, Source: "pod-1"}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	if err := Initialize("/applog/svc/"); err != nil {
@@ -147,7 +147,7 @@ func TestNotConfiguredErrorMessage(t *testing.T) {
 func TestInitializeBadServicePath(t *testing.T) {
 	t.Cleanup(resetConfig)
 
-	if err := Configure(BackendConfig{Protocol: ProtocolGraylogUDP, Addr: "127.0.0.1:1", Source: "pod-1"}); err != nil {
+	if err := Configure(DestinationConfig{Protocol: ProtocolGraylogUDP, Addr: "127.0.0.1:1", Source: "pod-1"}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	if err := Initialize(""); err == nil {

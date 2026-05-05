@@ -15,7 +15,7 @@ func TestProtocolFileWritesV2LayoutAndShape(t *testing.T) {
 	t.Cleanup(resetConfig)
 
 	dir := t.TempDir()
-	if err := Configure(BackendConfig{Protocol: ProtocolFile}); err != nil {
+	if err := Configure(DestinationConfig{Protocol: ProtocolFile}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	servicePath := filepath.Join(dir, "payments-api") + string(filepath.Separator)
@@ -69,7 +69,7 @@ func TestProtocolFileErrorPrefixesSubject(t *testing.T) {
 	t.Cleanup(resetConfig)
 
 	dir := t.TempDir()
-	if err := Configure(BackendConfig{Protocol: ProtocolFile}); err != nil {
+	if err := Configure(DestinationConfig{Protocol: ProtocolFile}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	servicePath := filepath.Join(dir, "svc") + string(filepath.Separator)
@@ -93,7 +93,7 @@ func TestProtocolFileGetFileNameFromStreamName(t *testing.T) {
 	t.Cleanup(resetConfig)
 
 	dir := t.TempDir()
-	if err := Configure(BackendConfig{Protocol: ProtocolFile}); err != nil {
+	if err := Configure(DestinationConfig{Protocol: ProtocolFile}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	servicePath := filepath.Join(dir, "svc") + string(filepath.Separator)
@@ -115,7 +115,7 @@ func TestProtocolFileCloseIsNoOp(t *testing.T) {
 	t.Cleanup(resetConfig)
 
 	dir := t.TempDir()
-	if err := Configure(BackendConfig{Protocol: ProtocolFile}); err != nil {
+	if err := Configure(DestinationConfig{Protocol: ProtocolFile}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	servicePath := filepath.Join(dir, "svc") + string(filepath.Separator)

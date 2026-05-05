@@ -17,10 +17,10 @@ import (
 // por janela.
 const warnWindow = 60 * time.Second
 
-// backend é a estratégia interna do V3: implementações concretas
-// (graylogUDP, fileBackend) atendem este contrato e são selecionadas
+// destination é a estratégia interna do V3: implementações concretas
+// (graylogUDP, fileDestination) atendem este contrato e são selecionadas
 // por Protocol em Initialize.
-type backend interface {
+type destination interface {
 	LogSubject(subject string, content any, errLog error, ascendStackFrame ...int)
 	GetFileNameFromStreamName(subject string) string
 	Close() error
@@ -31,7 +31,7 @@ type backend interface {
 // Satisfaz mchlogcore.Transport e mchlogcore.Closer.
 type LogType struct {
 	mu   sync.RWMutex
-	impl backend
+	impl destination
 }
 
 // MchLog é a instância global do V3. É populada por Initialize.
@@ -92,10 +92,10 @@ func Initialize(path string) error {
 
 	cfg := ActiveConfig()
 
-	var impl backend
+	var impl destination
 	switch cfg.Protocol {
 	case ProtocolFile:
-		impl = newFileBackend(path)
+		impl = newFileDestination(path)
 	case ProtocolGraylogUDP:
 		w, err := gelf.NewWriter(cfg.Addr)
 		if err != nil {
@@ -124,7 +124,7 @@ func Initialize(path string) error {
 // graylogUDP envia logs em formato GELF via UDP.
 type graylogUDP struct {
 	writer      *gelf.Writer
-	cfg         BackendConfig
+	cfg         DestinationConfig
 	serviceName string
 
 	mu       sync.Mutex

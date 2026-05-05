@@ -1,5 +1,5 @@
 // Package mchlogcorev3 é o backend unificado da toolkit. Suporta múltiplos
-// protocolos selecionados por BackendConfig.Protocol:
+// protocolos selecionados por DestinationConfig.Protocol:
 //
 //   - ProtocolFile: grava em arquivo no mesmo layout do mchlogcorev2
 //     (<basePath>/<service>/<level>/<level>.log) e mesma JSON shape.
@@ -29,10 +29,10 @@ const (
 	ProtocolGraylogUDP Protocol = "graylog-udp"
 )
 
-// BackendConfig agrupa todos os parâmetros aceitos pelo V3. Os campos
+// DestinationConfig agrupa todos os parâmetros aceitos pelo V3. Os campos
 // relevantes dependem de Protocol — campos de outros protocolos são
 // ignorados pela validação.
-type BackendConfig struct {
+type DestinationConfig struct {
 	// Protocol seleciona o backend. Default: ProtocolFile.
 	Protocol Protocol
 
@@ -52,14 +52,14 @@ type BackendConfig struct {
 
 var (
 	cfgMu      sync.RWMutex
-	activeCfg  BackendConfig
+	activeCfg  DestinationConfig
 	configured bool
 )
 
 // Configure normaliza e armazena a configuração que será usada pelo
 // backend. Aplica default a Protocol e valida os campos obrigatórios
 // para o protocolo selecionado.
-func Configure(cfg BackendConfig) error {
+func Configure(cfg DestinationConfig) error {
 	if cfg.Protocol == "" {
 		cfg.Protocol = ProtocolFile
 	}
@@ -88,8 +88,8 @@ func Configure(cfg BackendConfig) error {
 
 // ActiveConfig retorna uma cópia da configuração ativa. Útil para
 // testes e para o backend ler os parâmetros já normalizados.
-// Antes de Configure ser chamado, devolve um BackendConfig zero-valued.
-func ActiveConfig() BackendConfig {
+// Antes de Configure ser chamado, devolve um DestinationConfig zero-valued.
+func ActiveConfig() DestinationConfig {
 	cfgMu.RLock()
 	defer cfgMu.RUnlock()
 	return activeCfg
@@ -117,7 +117,7 @@ func DefaultSource() string {
 // (não exportado).
 func resetConfig() {
 	cfgMu.Lock()
-	activeCfg = BackendConfig{}
+	activeCfg = DestinationConfig{}
 	configured = false
 	cfgMu.Unlock()
 }

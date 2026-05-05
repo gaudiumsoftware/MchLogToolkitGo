@@ -19,7 +19,7 @@ func TestDefaultSource(t *testing.T) {
 func TestConfigureDefaultProtocolIsFile(t *testing.T) {
 	t.Cleanup(resetConfig)
 
-	if err := Configure(BackendConfig{}); err != nil {
+	if err := Configure(DestinationConfig{}); err != nil {
 		t.Fatalf("Configure with empty config should be valid for file: %v", err)
 	}
 	if got := ActiveConfig().Protocol; got != ProtocolFile {
@@ -32,7 +32,7 @@ func TestConfigureDefaultProtocolIsFile(t *testing.T) {
 func TestConfigureFileNoRequiredFields(t *testing.T) {
 	t.Cleanup(resetConfig)
 
-	if err := Configure(BackendConfig{Protocol: ProtocolFile}); err != nil {
+	if err := Configure(DestinationConfig{Protocol: ProtocolFile}); err != nil {
 		t.Fatalf("Configure should accept file with no fields: %v", err)
 	}
 }
@@ -41,7 +41,7 @@ func TestConfigureFileNoRequiredFields(t *testing.T) {
 func TestConfigureGraylogUDPRequiresAddr(t *testing.T) {
 	t.Cleanup(resetConfig)
 
-	err := Configure(BackendConfig{Protocol: ProtocolGraylogUDP, Source: "svc-x"})
+	err := Configure(DestinationConfig{Protocol: ProtocolGraylogUDP, Source: "svc-x"})
 	if err == nil {
 		t.Fatalf("Configure should reject empty Addr for ProtocolGraylogUDP")
 	}
@@ -51,7 +51,7 @@ func TestConfigureGraylogUDPRequiresAddr(t *testing.T) {
 func TestConfigureGraylogUDPRequiresSource(t *testing.T) {
 	t.Cleanup(resetConfig)
 
-	err := Configure(BackendConfig{Protocol: ProtocolGraylogUDP, Addr: "graylog.dev:12201"})
+	err := Configure(DestinationConfig{Protocol: ProtocolGraylogUDP, Addr: "graylog.dev:12201"})
 	if err == nil {
 		t.Fatalf("Configure should reject empty Source for ProtocolGraylogUDP")
 	}
@@ -61,7 +61,7 @@ func TestConfigureGraylogUDPRequiresSource(t *testing.T) {
 func TestConfigureGraylogUDPHappy(t *testing.T) {
 	t.Cleanup(resetConfig)
 
-	if err := Configure(BackendConfig{
+	if err := Configure(DestinationConfig{
 		Protocol: ProtocolGraylogUDP,
 		Addr:     "graylog.dev:12201",
 		Source:   "svc-x",
@@ -85,7 +85,7 @@ func TestConfigureGraylogUDPHappy(t *testing.T) {
 func TestConfigureDisableGZIPRespected(t *testing.T) {
 	t.Cleanup(resetConfig)
 
-	if err := Configure(BackendConfig{
+	if err := Configure(DestinationConfig{
 		Protocol:    ProtocolGraylogUDP,
 		Addr:        "graylog.dev:12201",
 		Source:      "svc-x",
@@ -103,7 +103,7 @@ func TestConfigureDisableGZIPRespected(t *testing.T) {
 func TestConfigureRejectsUnknownProtocol(t *testing.T) {
 	t.Cleanup(resetConfig)
 
-	err := Configure(BackendConfig{Protocol: "graylog-tcp"})
+	err := Configure(DestinationConfig{Protocol: "graylog-tcp"})
 	if err == nil {
 		t.Fatalf("Configure should reject unknown protocol")
 	}

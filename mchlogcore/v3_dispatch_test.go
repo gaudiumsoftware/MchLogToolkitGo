@@ -54,7 +54,7 @@ func TestSetVersionV3DispatchesToGraylog(t *testing.T) {
 	addr, conn := listenUDP(t)
 	defer conn.Close()
 
-	if err := mchlogcorev3.Configure(mchlogcorev3.BackendConfig{
+	if err := mchlogcorev3.Configure(mchlogcorev3.DestinationConfig{
 		Protocol: mchlogcorev3.ProtocolGraylogUDP,
 		Addr:     addr,
 		Source:   "pod-1",

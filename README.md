@@ -134,7 +134,7 @@ if err != nil {
 ```
 
 ## V3 - Backend unificado (arquivo ou Graylog)
-A V3 é o backend unificado da toolkit. O serviço escolhe entre **arquivo** (mesmo layout do V2) e **GELF UDP** (Graylog) configurando `BackendConfig.Protocol`. A API do `Logger` não muda — serviços que ainda usam V1 (default) ou V2 seguem funcionando sem alteração.
+A V3 é o backend unificado da toolkit. O serviço escolhe entre **arquivo** (mesmo layout do V2) e **GELF UDP** (Graylog) configurando `DestinationConfig.Protocol`. A API do `Logger` não muda — serviços que ainda usam V1 (default) ou V2 seguem funcionando sem alteração.
 
 A V3 é a forma recomendada daqui em diante. V1 e V2 continuam disponíveis para retrocompatibilidade enquanto serviços migram.
 
@@ -148,7 +148,7 @@ import (
 )
 
 func main() {
-    if err := mchlogcorev3.Configure(mchlogcorev3.BackendConfig{
+    if err := mchlogcorev3.Configure(mchlogcorev3.DestinationConfig{
         Protocol: mchlogcorev3.ProtocolFile,
     }); err != nil {
         panic(err)
@@ -173,7 +173,7 @@ import (
 )
 
 func main() {
-    if err := mchlogcorev3.Configure(mchlogcorev3.BackendConfig{
+    if err := mchlogcorev3.Configure(mchlogcorev3.DestinationConfig{
         Protocol: mchlogcorev3.ProtocolGraylogUDP,
         Addr:     "graylog.dev.internal:12201",
         Source:   "payments-api-qa-" + os.Getenv("POD_NAME"),
@@ -189,7 +189,7 @@ func main() {
 }
 ```
 
-### Campos do `BackendConfig`
+### Campos do `DestinationConfig`
 | Campo         | Obrigatório quando…           | Descrição                                                                            |
 |---------------|--------------------------------|--------------------------------------------------------------------------------------|
 | `Protocol`    | —                              | `ProtocolFile` (default) ou `ProtocolGraylogUDP`.                                    |
@@ -225,5 +225,5 @@ Não há fallback automático para arquivo.
 - **Dev/QA**: `ProtocolGraylogUDP` para concentrar logs no Graylog.
 
 ### Migração de V1/V2 para V3
-Trocar `mchlogcore.SetVersion(mchlogcore.V2)` por `Configure(BackendConfig{Protocol: ProtocolFile}) + SetVersion(V3)` mantém o comportamento bit-a-bit (mesmo layout, mesma JSON shape).
+Trocar `mchlogcore.SetVersion(mchlogcore.V2)` por `Configure(DestinationConfig{Protocol: ProtocolFile}) + SetVersion(V3)` mantém o comportamento bit-a-bit (mesmo layout, mesma JSON shape).
 V1 e V2 seguem disponíveis até a próxima onda de migração.
