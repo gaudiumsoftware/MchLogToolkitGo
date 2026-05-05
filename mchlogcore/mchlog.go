@@ -10,10 +10,12 @@ import (
 )
 
 // Asserções de tempo de compilação garantindo que cada backend
-// satisfaz a interface Transport.
+// satisfaz a interface Transport (e Closer, quando aplicável).
 var (
 	_ Transport = (*mchlogcorev1.LogType)(nil)
 	_ Transport = (*mchlogcorev2.LogType)(nil)
+	_ Transport = (*mchlogcorev3.LogType)(nil)
+	_ Closer    = (*mchlogcorev3.LogType)(nil)
 )
 
 // LogVersion identifica qual backend de log está em uso.

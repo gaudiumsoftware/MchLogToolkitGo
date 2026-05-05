@@ -217,7 +217,8 @@ func TestContentToMapNil(t *testing.T) {
 	}
 }
 
-// TestServiceFromPathVariants cobre formatos comuns de path.
+// TestServiceFromPathVariants cobre formatos comuns de path e
+// rejeita paths degenerados ("./", ".", "..", roots Windows).
 func TestServiceFromPathVariants(t *testing.T) {
 	cases := map[string]string{
 		"/applog/payments-api/": "payments-api",
@@ -225,6 +226,11 @@ func TestServiceFromPathVariants(t *testing.T) {
 		"./applog/svc/":         "svc",
 		"":                      "",
 		"/":                     "",
+		"./":                    "",
+		".":                     "",
+		"..":                    "",
+		"C:/":                   "",
+		"C:\\":                  "",
 	}
 	for in, want := range cases {
 		if got := serviceFromPath(in); got != want {

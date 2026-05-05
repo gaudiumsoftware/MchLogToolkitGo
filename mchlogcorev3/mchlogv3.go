@@ -115,9 +115,16 @@ func Initialize(path string) error {
 		return errors.New("mchlogcorev3: unsupported Protocol: " + string(cfg.Protocol))
 	}
 
+	// Troca o impl ativo. Se houver um impl anterior (Initialize chamado
+	// duas vezes), fecha-o fora do lock para liberar recursos (socket UDP
+	// no caso do graylogUDP) sem reter a write lock durante I/O.
 	MchLog.mu.Lock()
+	old := MchLog.impl
 	MchLog.impl = impl
 	MchLog.mu.Unlock()
+	if old != nil {
+		_ = old.Close()
+	}
 	return nil
 }
 
@@ -132,7 +139,16 @@ type graylogUDP struct {
 	lastWarn time.Time
 }
 
+// LogSubject monta a mensagem GELF e envia via UDP. Falhas no envio
+// são registradas via warnOnce e silenciadas para o caller.
+//
+// ascendStackFrame é aceito por compatibilidade com a interface
+// mchlogcore.Transport, mas é ignorado neste backend: os campos
+// _file/_line do GELF vêm do payload (que o logger.go popula via
+// runtime.Caller no momento do log), não de uma re-captura aqui.
 func (g *graylogUDP) LogSubject(subject string, content any, errLog error, ascendStackFrame ...int) {
+	_ = ascendStackFrame
+
 	if g == nil || subject == "" {
 		return
 	}
@@ -146,8 +162,6 @@ func (g *graylogUDP) LogSubject(subject string, content any, errLog error, ascen
 	if err := g.writer.WriteMessage(msg); err != nil {
 		g.warnOnce(err)
 	}
-
-	_ = ascendStackFrame
 }
 
 func (g *graylogUDP) GetFileNameFromStreamName(subject string) string {
@@ -188,10 +202,26 @@ func (g *graylogUDP) warnOnce(err error) {
 
 // serviceFromPath extrai o nome do serviço de um path no formato
 // "<basePath>/<service>/" (ou variações com separadores Windows).
+// Rejeita paths degenerados ("", ".", "..", "C:") devolvendo "" para
+// que Initialize falhe explicitamente em vez de criar um service com
+// nome inválido (ex.: "_log_id=.-mchlog-info").
 func serviceFromPath(path string) string {
-	p := strings.TrimRight(filepath.ToSlash(path), "/ ")
+	// filepath.ToSlash é platform-aware (no-op em Unix). Para tratar
+	// paths Windows independente do SO em que o teste/serviço roda,
+	// normalizamos backslashes manualmente antes do trim.
+	normalized := strings.ReplaceAll(path, "\\", "/")
+	p := strings.TrimRight(normalized, "/ ")
 	if p == "" {
 		return ""
 	}
-	return filepath.Base(p)
+	base := filepath.Base(p)
+	switch base {
+	case ".", "..", "/":
+		return ""
+	}
+	// Windows root como "C:" também não é nome de serviço válido.
+	if len(base) == 2 && base[1] == ':' {
+		return ""
+	}
+	return base
 }

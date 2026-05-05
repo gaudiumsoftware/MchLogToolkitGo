@@ -155,3 +155,42 @@ func TestGraylogUDPInitializeRequiresConfigure(t *testing.T) {
 		t.Fatalf("Initialize without Configure should error")
 	}
 }
+
+// TestInitializeReentryClosesPrevious garante que chamar Initialize
+// duas vezes fecha o destino anterior antes de instalar o novo
+// (evita vazamento do socket UDP do graylogUDP).
+func TestInitializeReentryClosesPrevious(t *testing.T) {
+	t.Cleanup(resetConfig)
+
+	addr, conn := listenUDP(t)
+	defer conn.Close()
+
+	if err := Configure(DestinationConfig{
+		Protocol: ProtocolGraylogUDP,
+		Addr:     addr,
+		Source:   "pod-1",
+	}); err != nil {
+		t.Fatalf("Configure: %v", err)
+	}
+	if err := Initialize("/applog/svc-a/"); err != nil {
+		t.Fatalf("first Initialize: %v", err)
+	}
+
+	first, ok := MchLog.impl.(*graylogUDP)
+	if !ok {
+		t.Fatalf("expected first impl to be *graylogUDP, got %T", MchLog.impl)
+	}
+
+	if err := Initialize("/applog/svc-b/"); err != nil {
+		t.Fatalf("second Initialize: %v", err)
+	}
+
+	first.mu.Lock()
+	closed := first.closed
+	first.mu.Unlock()
+	if !closed {
+		t.Errorf("first impl should have been Closed by second Initialize")
+	}
+
+	t.Cleanup(func() { _ = MchLog.Close() })
+}

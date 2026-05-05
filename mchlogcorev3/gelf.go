@@ -72,7 +72,7 @@ func buildGELFMessage(serviceName, level string, content any, errLog error, cfg 
 	msg := &gelf.Message{
 		Version:  "1.1",
 		Host:     cfg.Source,
-		TimeUnix: float64(time.Now().UTC().UnixNano()) / float64(time.Second),
+		TimeUnix: float64(time.Now().UnixNano()) / float64(time.Second),
 		Level:    levelToSyslog(level),
 		Extra:    make(map[string]any),
 	}
@@ -130,7 +130,13 @@ func contentToMap(content any) (map[string]any, error) {
 
 	switch v := content.(type) {
 	case map[string]any:
-		return v, nil
+		// Copia para evitar aliasing: o caller não deve ver mutações
+		// que o builder possa fazer no map devolvido (e vice-versa).
+		out := make(map[string]any, len(v))
+		for k, val := range v {
+			out[k] = val
+		}
+		return out, nil
 	case map[string]string:
 		out := make(map[string]any, len(v))
 		for k, s := range v {
