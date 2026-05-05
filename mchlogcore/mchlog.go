@@ -9,7 +9,7 @@ import (
 	"github.com/gaudiumsoftware/mchlogtoolkitgo/mchlogcorev3"
 )
 
-// Asserções de tempo de compilação garantindo que cada backend
+// Asserções de tempo de compilação garantindo que cada destino
 // satisfaz a interface Transport (e Closer, quando aplicável).
 var (
 	_ Transport = (*mchlogcorev1.LogType)(nil)
@@ -18,15 +18,15 @@ var (
 	_ Closer    = (*mchlogcorev3.LogType)(nil)
 )
 
-// LogVersion identifica qual backend de log está em uso.
+// LogVersion identifica qual destino de log está em uso.
 type LogVersion int
 
 const (
-	// V1 — backend de arquivo, formato com IP e timestamp por hora.
+	// V1 — destino de arquivo, formato com IP e timestamp por hora.
 	V1 LogVersion = iota
-	// V2 — backend de arquivo, formato simples (um arquivo por subject).
+	// V2 — destino de arquivo, formato simples (um arquivo por subject).
 	V2
-	// V3 — backend unificado. Suporta arquivo (mesmo layout do V2) e
+	// V3 — destino unificado. Suporta arquivo (mesmo layout do V2) e
 	// rede (GELF UDP) selecionados via mchlogcorev3.DestinationConfig.Protocol.
 	// Outros protocolos (graylog-tcp, syslog, splunk-hec, ...) podem ser
 	// adicionados sem bumpar o enum.
@@ -93,9 +93,9 @@ func (l *LogType) GetIP() string {
 }
 
 // Close libera recursos do transporte ativo, quando ele implementa
-// a interface Closer (somente backends que precisam de cleanup explícito,
-// ex.: V3 sobre UDP). Para backends de arquivo (V1, V2) é no-op.
-// Idempotência é responsabilidade do backend.
+// a interface Closer (somente destinos que precisam de cleanup explícito,
+// ex.: V3 sobre UDP). Para destinos de arquivo (V1, V2) é no-op.
+// Idempotência é responsabilidade do destino.
 func (l *LogType) Close() error {
 	if c, ok := current.(Closer); ok {
 		return c.Close()
@@ -106,8 +106,8 @@ func (l *LogType) Close() error {
 // MchLog é a instância global do facade.
 var MchLog LogType
 
-// InitializeMchLog inicializa o backend selecionado com o caminho dado.
-// Em todos os backends o path tem a forma "<basePath>/<service>/":
+// InitializeMchLog inicializa o destino selecionado com o caminho dado.
+// Em todos os destinos o path tem a forma "<basePath>/<service>/":
 //   - V1, V2 e V3-ProtocolFile usam o caminho como diretório base de arquivos.
 //   - V3-ProtocolGraylogUDP usa o último segmento apenas para extrair
 //     o nome do serviço; o destino real é cfg.Addr.

@@ -133,8 +133,8 @@ if err != nil {
 }
 ```
 
-## V3 - Backend unificado (arquivo ou Graylog)
-A V3 é o backend unificado da toolkit. O serviço escolhe entre **arquivo** (mesmo layout do V2) e **GELF UDP** (Graylog) configurando `DestinationConfig.Protocol`. A API do `Logger` não muda — serviços que ainda usam V1 (default) ou V2 seguem funcionando sem alteração.
+## V3 - Destino unificado (arquivo ou Graylog)
+A V3 é o destino unificado da toolkit. O serviço escolhe entre **arquivo** (mesmo layout do V2) e **GELF UDP** (Graylog) configurando `DestinationConfig.Protocol`. A API do `Logger` não muda — serviços que ainda usam V1 (default) ou V2 seguem funcionando sem alteração.
 
 A V3 é a forma recomendada daqui em diante. V1 e V2 continuam disponíveis para retrocompatibilidade enquanto serviços migram.
 

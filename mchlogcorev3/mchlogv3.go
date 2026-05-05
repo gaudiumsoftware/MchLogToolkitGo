@@ -143,7 +143,7 @@ type graylogUDP struct {
 // são registradas via warnOnce e silenciadas para o caller.
 //
 // ascendStackFrame é aceito por compatibilidade com a interface
-// mchlogcore.Transport, mas é ignorado neste backend: os campos
+// mchlogcore.Transport, mas é ignorado neste destino: os campos
 // _file/_line do GELF vêm do payload (que o logger.go popula via
 // runtime.Caller no momento do log), não de uma re-captura aqui.
 func (g *graylogUDP) LogSubject(subject string, content any, errLog error, ascendStackFrame ...int) {

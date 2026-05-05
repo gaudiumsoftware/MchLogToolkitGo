@@ -43,7 +43,7 @@ func (f *fileDestination) GetFileNameFromStreamName(subject string) string {
 // no encerramento do processo, comportamento idêntico ao uso direto
 // de mchlogcorev2.
 //
-// Atenção: este backend não bufferiza writes (zerolog escreve direto
+// Atenção: este destino não bufferiza writes (zerolog escreve direto
 // no arquivo), então não há flush a fazer aqui. Callers que esperem
 // Close liberar recursos não verão diferença observável.
 func (f *fileDestination) Close() error {

@@ -1,4 +1,4 @@
-// Package mchlogcorev3 é o backend unificado da toolkit. Suporta múltiplos
+// Package mchlogcorev3 é o destino unificado da toolkit. Suporta múltiplos
 // protocolos selecionados por DestinationConfig.Protocol:
 //
 //   - ProtocolFile: grava em arquivo no mesmo layout do mchlogcorev2
@@ -16,7 +16,7 @@ import (
 	"sync"
 )
 
-// Protocol identifica o backend efetivo usado para persistir/enviar logs.
+// Protocol identifica o destino efetivo usado para persistir/enviar logs.
 type Protocol string
 
 const (
@@ -33,7 +33,7 @@ const (
 // relevantes dependem de Protocol — campos de outros protocolos são
 // ignorados pela validação.
 type DestinationConfig struct {
-	// Protocol seleciona o backend. Default: ProtocolFile.
+	// Protocol seleciona o destino. Default: ProtocolFile.
 	Protocol Protocol
 
 	// Addr é o endereço do destino no formato "host:porta".
@@ -57,7 +57,7 @@ var (
 )
 
 // Configure normaliza e armazena a configuração que será usada pelo
-// backend. Aplica default a Protocol e valida os campos obrigatórios
+// destino. Aplica default a Protocol e valida os campos obrigatórios
 // para o protocolo selecionado.
 func Configure(cfg DestinationConfig) error {
 	if cfg.Protocol == "" {
@@ -87,7 +87,7 @@ func Configure(cfg DestinationConfig) error {
 }
 
 // ActiveConfig retorna uma cópia da configuração ativa. Útil para
-// testes e para o backend ler os parâmetros já normalizados.
+// testes e para o destino ler os parâmetros já normalizados.
 // Antes de Configure ser chamado, devolve um DestinationConfig zero-valued.
 func ActiveConfig() DestinationConfig {
 	cfgMu.RLock()
