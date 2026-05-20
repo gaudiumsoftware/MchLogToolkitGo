@@ -119,17 +119,27 @@ func Configure(cfg DestinationConfig) error {
 	return nil
 }
 
-// ActiveConfig retorna uma cópia da configuração ativa. Útil para
-// testes e para o destino ler os parâmetros já normalizados.
+// ActiveConfig retorna uma cópia profunda da configuração ativa. Útil
+// para testes e para o destino ler os parâmetros já normalizados.
 // Antes de Configure ser chamado, devolve um DestinationConfig zero-valued.
 //
-// Atenção: o ponteiro Network é compartilhado com a cópia interna.
-// Callers que mutarem *ActiveConfig().Network corromperão o estado;
-// trate-o como read-only.
+// O ponteiro Network e o slice NetworkSubjects são duplicados, então
+// callers podem mutar o resultado livremente sem afetar o estado interno
+// (simetria com Configure, que também duplica ambos na entrada).
 func ActiveConfig() DestinationConfig {
 	cfgMu.RLock()
 	defer cfgMu.RUnlock()
-	return activeCfg
+	out := activeCfg
+	if activeCfg.Network != nil {
+		n := *activeCfg.Network
+		out.Network = &n
+	}
+	if len(activeCfg.NetworkSubjects) > 0 {
+		dup := make([]string, len(activeCfg.NetworkSubjects))
+		copy(dup, activeCfg.NetworkSubjects)
+		out.NetworkSubjects = dup
+	}
+	return out
 }
 
 // IsConfigured indica se Configure já foi chamado com sucesso.

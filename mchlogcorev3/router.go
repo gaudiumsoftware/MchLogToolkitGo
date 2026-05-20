@@ -5,7 +5,9 @@ package mchlogcorev3
 // para o network impl quando este está configurado. Subjects fora desta
 // lista (eventos de domínio) vão para o file impl.
 //
-// Para estender a whitelist, use DestinationConfig.NetworkSubjects.
+// Match é case-sensitive: o Logger interno sempre emite o level em
+// lowercase, então `LogSubject("INFO", ...)` cai em file (não bate na
+// whitelist). Para estender, use DestinationConfig.NetworkSubjects.
 var defaultLevelSubjects = []string{
 	"test", "debug", "info", "warn", "error", "fatal",
 }

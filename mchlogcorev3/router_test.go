@@ -401,7 +401,9 @@ func TestFacadeGetFileNameFromStreamNameRouting(t *testing.T) {
 
 // TestRouterConcurrentLogSubject roda muitas goroutines escrevendo via
 // router (leveled+domain) e exige (a) zero races; (b) datagramas
-// recebidos = N_leveled; (c) linhas no arquivo de domínio = N_domain.
+// recebidos > 0 (UDP em loopback pode dropar sob rajada — contagem
+// exata não é validável aqui); (c) linhas no arquivo de domínio =
+// N_domain (file é determinístico, valida o total exato).
 func TestRouterConcurrentLogSubject(t *testing.T) {
 	t.Cleanup(resetConfig)
 
@@ -447,9 +449,11 @@ func TestRouterConcurrentLogSubject(t *testing.T) {
 	}
 	wg.Wait()
 
-	// Drena datagramas UDP por até 1s. Loopback pode dropar sob
-	// rajada; aceitamos qualquer N > 0 como sinal de que rota network
-	// está viva, e cobrimos a contagem exata via inspeção de arquivo.
+	// Drena datagramas UDP por até 1s. UDP em loopback dropa sob rajada
+	// — não dá para exigir N exato. Aceitamos N > 0 como sinal de que a
+	// rota network está viva; a validação determinística do total é
+	// feita logo abaixo via inspeção do arquivo do subject de domínio
+	// (file impl não dropa).
 	gotDatagrams := 0
 	_ = conn.SetReadDeadline(time.Now().Add(1 * time.Second))
 	buf := make([]byte, 64*1024)
