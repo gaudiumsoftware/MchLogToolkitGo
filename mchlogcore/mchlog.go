@@ -108,9 +108,10 @@ var MchLog LogType
 
 // InitializeMchLog inicializa o destino selecionado com o caminho dado.
 // Em todos os destinos o path tem a forma "<basePath>/<service>/":
-//   - V1, V2 e V3-ProtocolFile usam o caminho como diretório base de arquivos.
-//   - V3-ProtocolGraylogUDP usa o último segmento apenas para extrair
-//     o nome do serviço; o destino real é cfg.Addr.
+//   - V1 e V2 usam o caminho como diretório base de arquivos.
+//   - V3 usa o caminho como diretório base do file impl (sempre presente)
+//     e também extrai o nome do serviço do último segmento para uso no
+//     destino de rede (quando configurado em DestinationConfig.Network).
 func InitializeMchLog(path string) {
 	var versionName string
 	var initErr error
