@@ -57,11 +57,11 @@ func TestGraylogUDPSendsValidGELF(t *testing.T) {
 	addr, conn := listenUDP(t)
 	defer conn.Close()
 
-	if err := Configure(DestinationConfig{
-		Protocol: ProtocolGraylogUDP,
-		Addr:     addr,
-		Source:   "pod-1",
-	}); err != nil {
+	if err := Configure(DestinationConfig{Network: &NetworkConfig{
+		Type:   NetworkGraylogUDP,
+		Addr:   addr,
+		Source: "pod-1",
+	}}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	if err := Initialize("/applog/payments-api/"); err != nil {
@@ -107,7 +107,7 @@ func TestGraylogUDPGetFileNameFromStreamName(t *testing.T) {
 	addr, conn := listenUDP(t)
 	defer conn.Close()
 
-	if err := Configure(DestinationConfig{Protocol: ProtocolGraylogUDP, Addr: addr, Source: "pod-1"}); err != nil {
+	if err := Configure(DestinationConfig{Network: &NetworkConfig{Type: NetworkGraylogUDP, Addr: addr, Source: "pod-1"}}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	if err := Initialize("/applog/payments-api/"); err != nil {
@@ -130,7 +130,7 @@ func TestGraylogUDPCloseIdempotent(t *testing.T) {
 	addr, conn := listenUDP(t)
 	defer conn.Close()
 
-	if err := Configure(DestinationConfig{Protocol: ProtocolGraylogUDP, Addr: addr, Source: "pod-1"}); err != nil {
+	if err := Configure(DestinationConfig{Network: &NetworkConfig{Type: NetworkGraylogUDP, Addr: addr, Source: "pod-1"}}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	if err := Initialize("/applog/svc/"); err != nil {
@@ -165,21 +165,18 @@ func TestInitializeReentryClosesPrevious(t *testing.T) {
 	addr, conn := listenUDP(t)
 	defer conn.Close()
 
-	if err := Configure(DestinationConfig{
-		Protocol: ProtocolGraylogUDP,
-		Addr:     addr,
-		Source:   "pod-1",
-	}); err != nil {
+	if err := Configure(DestinationConfig{Network: &NetworkConfig{
+		Type:   NetworkGraylogUDP,
+		Addr:   addr,
+		Source: "pod-1",
+	}}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	if err := Initialize("/applog/svc-a/"); err != nil {
 		t.Fatalf("first Initialize: %v", err)
 	}
 
-	first, ok := MchLog.impl.(*graylogUDP)
-	if !ok {
-		t.Fatalf("expected first impl to be *graylogUDP, got %T", MchLog.impl)
-	}
+	first := currentGraylogUDP(t)
 
 	if err := Initialize("/applog/svc-b/"); err != nil {
 		t.Fatalf("second Initialize: %v", err)

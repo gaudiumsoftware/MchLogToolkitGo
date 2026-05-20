@@ -13,27 +13,31 @@ func TestDefaultSource(t *testing.T) {
 	}
 }
 
-// TestConfigureDefaultProtocolIsFile garante que sem Protocol explícito
-// o default aplicado é ProtocolFile (caminho de menor surpresa para
-// callers migrando de V2).
-func TestConfigureDefaultProtocolIsFile(t *testing.T) {
+// TestConfigureZeroValueIsFileOnly garante que sem Network configurado
+// o V3 entra em modo file-only (caminho de menor surpresa para callers
+// migrando de V2).
+func TestConfigureZeroValueIsFileOnly(t *testing.T) {
 	t.Cleanup(resetConfig)
 
 	if err := Configure(DestinationConfig{}); err != nil {
-		t.Fatalf("Configure with empty config should be valid for file: %v", err)
+		t.Fatalf("Configure with empty config should be valid for file-only: %v", err)
 	}
-	if got := ActiveConfig().Protocol; got != ProtocolFile {
-		t.Errorf("default Protocol = %q, want %q", got, ProtocolFile)
+	if got := ActiveConfig().Network; got != nil {
+		t.Errorf("expected Network==nil, got %+v", got)
 	}
 }
 
-// TestConfigureFileNoRequiredFields garante que ProtocolFile não exige
-// Addr nem Source (essas são exclusivas do GraylogUDP).
-func TestConfigureFileNoRequiredFields(t *testing.T) {
+// TestConfigureNetworkRequiresType garante que NetworkConfig sem Type
+// é rejeitado.
+func TestConfigureNetworkRequiresType(t *testing.T) {
 	t.Cleanup(resetConfig)
 
-	if err := Configure(DestinationConfig{Protocol: ProtocolFile}); err != nil {
-		t.Fatalf("Configure should accept file with no fields: %v", err)
+	err := Configure(DestinationConfig{Network: &NetworkConfig{
+		Addr:   "graylog.dev:12201",
+		Source: "svc-x",
+	}})
+	if err == nil {
+		t.Fatalf("Configure should reject empty Network.Type")
 	}
 }
 
@@ -41,9 +45,12 @@ func TestConfigureFileNoRequiredFields(t *testing.T) {
 func TestConfigureGraylogUDPRequiresAddr(t *testing.T) {
 	t.Cleanup(resetConfig)
 
-	err := Configure(DestinationConfig{Protocol: ProtocolGraylogUDP, Source: "svc-x"})
+	err := Configure(DestinationConfig{Network: &NetworkConfig{
+		Type:   NetworkGraylogUDP,
+		Source: "svc-x",
+	}})
 	if err == nil {
-		t.Fatalf("Configure should reject empty Addr for ProtocolGraylogUDP")
+		t.Fatalf("Configure should reject empty Addr for NetworkGraylogUDP")
 	}
 }
 
@@ -51,9 +58,12 @@ func TestConfigureGraylogUDPRequiresAddr(t *testing.T) {
 func TestConfigureGraylogUDPRequiresSource(t *testing.T) {
 	t.Cleanup(resetConfig)
 
-	err := Configure(DestinationConfig{Protocol: ProtocolGraylogUDP, Addr: "graylog.dev:12201"})
+	err := Configure(DestinationConfig{Network: &NetworkConfig{
+		Type: NetworkGraylogUDP,
+		Addr: "graylog.dev:12201",
+	}})
 	if err == nil {
-		t.Fatalf("Configure should reject empty Source for ProtocolGraylogUDP")
+		t.Fatalf("Configure should reject empty Source for NetworkGraylogUDP")
 	}
 }
 
@@ -61,22 +71,25 @@ func TestConfigureGraylogUDPRequiresSource(t *testing.T) {
 func TestConfigureGraylogUDPHappy(t *testing.T) {
 	t.Cleanup(resetConfig)
 
-	if err := Configure(DestinationConfig{
-		Protocol: ProtocolGraylogUDP,
-		Addr:     "graylog.dev:12201",
-		Source:   "svc-x",
-	}); err != nil {
+	if err := Configure(DestinationConfig{Network: &NetworkConfig{
+		Type:   NetworkGraylogUDP,
+		Addr:   "graylog.dev:12201",
+		Source: "svc-x",
+	}}); err != nil {
 		t.Fatalf("Configure failed: %v", err)
 	}
 	got := ActiveConfig()
-	if got.Protocol != ProtocolGraylogUDP {
-		t.Errorf("Protocol = %q", got.Protocol)
+	if got.Network == nil {
+		t.Fatalf("expected Network!=nil")
 	}
-	if got.DisableGZIP {
+	if got.Network.Type != NetworkGraylogUDP {
+		t.Errorf("Type = %q", got.Network.Type)
+	}
+	if got.Network.DisableGZIP {
 		t.Errorf("GZIP must be enabled by default (DisableGZIP=false)")
 	}
-	if got.Addr != "graylog.dev:12201" {
-		t.Errorf("Addr = %q", got.Addr)
+	if got.Network.Addr != "graylog.dev:12201" {
+		t.Errorf("Addr = %q", got.Network.Addr)
 	}
 }
 
@@ -85,27 +98,86 @@ func TestConfigureGraylogUDPHappy(t *testing.T) {
 func TestConfigureDisableGZIPRespected(t *testing.T) {
 	t.Cleanup(resetConfig)
 
-	if err := Configure(DestinationConfig{
-		Protocol:    ProtocolGraylogUDP,
+	if err := Configure(DestinationConfig{Network: &NetworkConfig{
+		Type:        NetworkGraylogUDP,
 		Addr:        "graylog.dev:12201",
 		Source:      "svc-x",
 		DisableGZIP: true,
-	}); err != nil {
+	}}); err != nil {
 		t.Fatalf("Configure failed: %v", err)
 	}
-	if !ActiveConfig().DisableGZIP {
+	if !ActiveConfig().Network.DisableGZIP {
 		t.Errorf("DisableGZIP=true was overwritten")
 	}
 }
 
-// TestConfigureRejectsUnknownProtocol garante futuro-proofing para
-// quando outros protocolos forem adicionados.
-func TestConfigureRejectsUnknownProtocol(t *testing.T) {
+// TestConfigureRejectsUnknownNetworkType garante futuro-proofing para
+// quando outros transportes forem adicionados.
+func TestConfigureRejectsUnknownNetworkType(t *testing.T) {
 	t.Cleanup(resetConfig)
 
-	err := Configure(DestinationConfig{Protocol: "graylog-tcp"})
+	err := Configure(DestinationConfig{Network: &NetworkConfig{
+		Type:   "graylog-tcp",
+		Addr:   "graylog.dev:12201",
+		Source: "svc-x",
+	}})
 	if err == nil {
-		t.Fatalf("Configure should reject unknown protocol")
+		t.Fatalf("Configure should reject unknown Network.Type")
+	}
+}
+
+// TestConfigureCopiesNetworkConfig garante que mutações do caller após
+// Configure não afetam o estado armazenado.
+func TestConfigureCopiesNetworkConfig(t *testing.T) {
+	t.Cleanup(resetConfig)
+
+	cfg := &NetworkConfig{
+		Type:   NetworkGraylogUDP,
+		Addr:   "graylog.dev:12201",
+		Source: "svc-x",
+	}
+	if err := Configure(DestinationConfig{Network: cfg}); err != nil {
+		t.Fatalf("Configure: %v", err)
+	}
+	cfg.Addr = "evil.dev:1"
+
+	if got := ActiveConfig().Network.Addr; got != "graylog.dev:12201" {
+		t.Errorf("internal config mutated by caller, Addr=%q", got)
+	}
+}
+
+// TestConfigureNetworkSubjectsRequireNetwork garante que listar subjects
+// extras sem destino de rede é erro claro.
+func TestConfigureNetworkSubjectsRequireNetwork(t *testing.T) {
+	t.Cleanup(resetConfig)
+
+	err := Configure(DestinationConfig{NetworkSubjects: []string{"foo"}})
+	if err == nil {
+		t.Fatalf("Configure should reject NetworkSubjects without Network")
+	}
+}
+
+// TestConfigureNetworkSubjectsCopied garante que mutações no slice
+// passado pelo caller não afetam o estado armazenado.
+func TestConfigureNetworkSubjectsCopied(t *testing.T) {
+	t.Cleanup(resetConfig)
+
+	subs := []string{"historico_posicao_taxi"}
+	if err := Configure(DestinationConfig{
+		Network: &NetworkConfig{
+			Type:   NetworkGraylogUDP,
+			Addr:   "graylog.dev:12201",
+			Source: "svc-x",
+		},
+		NetworkSubjects: subs,
+	}); err != nil {
+		t.Fatalf("Configure: %v", err)
+	}
+	subs[0] = "tampered"
+
+	got := ActiveConfig().NetworkSubjects
+	if len(got) != 1 || got[0] != "historico_posicao_taxi" {
+		t.Errorf("internal NetworkSubjects mutated by caller: %v", got)
 	}
 }
 
@@ -116,8 +188,11 @@ func TestActiveConfigBeforeConfigure(t *testing.T) {
 	resetConfig()
 
 	got := ActiveConfig()
-	if got.Addr != "" || got.Source != "" {
-		t.Errorf("ActiveConfig before Configure should be zero-valued, got %+v", got)
+	if got.Network != nil {
+		t.Errorf("ActiveConfig before Configure should be zero-valued, got Network=%+v", got.Network)
+	}
+	if len(got.NetworkSubjects) != 0 {
+		t.Errorf("ActiveConfig before Configure should be zero-valued, got NetworkSubjects=%v", got.NetworkSubjects)
 	}
 	if IsConfigured() {
 		t.Errorf("IsConfigured should be false before Configure")
