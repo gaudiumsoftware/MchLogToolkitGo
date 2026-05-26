@@ -24,7 +24,7 @@ func TestFileOnlyWritesV2LayoutAndShape(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = MchLog.Close() })
 
-	payload := []byte(`{"message":"hello","level":"info","source":"x.go","line":"1","trace":""}`)
+	payload := []byte(`{"message":"hello","level":"info","file":"x.go","line":"1","trace":""}`)
 	MchLog.LogSubject("info", payload, nil)
 
 	expected := MchLog.GetFileNameFromStreamName("info")
@@ -55,8 +55,8 @@ func TestFileOnlyWritesV2LayoutAndShape(t *testing.T) {
 	if got["level"] != "info" {
 		t.Errorf("level=%v want info", got["level"])
 	}
-	if got["source"] != "x.go" {
-		t.Errorf("source=%v", got["source"])
+	if got["file"] != "x.go" {
+		t.Errorf("file=%v", got["file"])
 	}
 	if _, hasTimestamp := got["timestamp"]; !hasTimestamp {
 		t.Errorf("missing timestamp")

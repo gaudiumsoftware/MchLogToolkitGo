@@ -72,7 +72,7 @@ Estas chamadas criarão arquivos de logs no diretório /applog/service-name/INFO
   "timestamp": "2024-08-07 15:39:23",
   "level": "INFO",
   "line": "10",
-  "source": "path/service.go",
+  "file": "path/service.go",
   "message": "mensagem de informação",
   "trace": ""
 }
@@ -154,7 +154,7 @@ para retrocompatibilidade enquanto serviços migram.
 
 ### Modo arquivo-only
 Comportamento idêntico ao V2: layout `<basePath>/<service>/<subject>/<subject>.log`,
-mesma JSON shape (`message`, `level`, `source`, `line`, `trace`, `timestamp`).
+mesma JSON shape (`message`, `level`, `file`, `line`, `trace`, `timestamp`).
 ```go
 import (
     mchlogtoolkitgo "github.com/gaudiumsoftware/mchlogtoolkitgo"

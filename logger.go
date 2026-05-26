@@ -151,7 +151,7 @@ func formatLog(message, level string) []byte {
 		return nil
 	}
 
-	_, source, line, ok := runtime.Caller(2)
+	_, file, line, ok := runtime.Caller(2)
 	if !ok {
 		return nil
 	}
@@ -159,7 +159,7 @@ func formatLog(message, level string) []byte {
 	formatedMessage := map[string]string{
 		"message": message,
 		"level":   level,
-		"source":  source,
+		"file":    file,
 		"line":    strconv.Itoa(line),
 		"trace":   "",
 	}

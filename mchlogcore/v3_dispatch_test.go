@@ -82,7 +82,7 @@ func TestSetVersionV3DispatchesToGraylog(t *testing.T) {
 	}
 
 	// Mensagem de aplicação.
-	MchLog.LogSubject("info", []byte(`{"message":"hello","level":"info","source":"x.go","line":"1","trace":""}`), nil)
+	MchLog.LogSubject("info", []byte(`{"message":"hello","level":"info","file":"x.go","line":"1","trace":""}`), nil)
 	raw := readDatagram(t, conn)
 
 	var got map[string]any
