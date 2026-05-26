@@ -51,17 +51,16 @@ func levelToSyslog(level string) int32 {
 //   - Short = chave "message" do payload (ou string vazia se ausente)
 //   - Host  = cfg.Source
 //   - Level = mapping syslog do parâmetro level
-//   - Extra:
+//   - Extra (campos fixos injetados pelo builder):
 //   - _application_name = serviceName
 //   - _log_id           = "<serviceName>-mchlog-<level>"
 //   - _level_name       = level
-//   - _file             = chave "file" do payload (preenchida pelo logger.go
-//     via runtime.Caller; o nome "file" evita colidir com a coluna "source"
-//     do Graylog, que vem do Host)
-//   - _line             = chave "line"
-//   - _trace            = chave "trace"
-//   - demais chaves     = prefixadas com "_"
 //   - _error            = errLog.Error() quando errLog != nil
+//   - Extra (campos do payload): qualquer chave que sobre no payload
+//     (file, line, trace, …) entra em Extra prefixada com "_" via
+//     fan-out genérico. O logger.go já emite "file" no lugar do
+//     antigo "source", evitando colisão com a coluna "source" do
+//     Graylog (que vem do Host).
 func buildGELFMessage(serviceName, level string, content any, errLog error, cfg NetworkConfig) (*gelf.Message, error) {
 	fields, err := contentToMap(content)
 	if err != nil {
