@@ -11,8 +11,9 @@ import (
 )
 
 // handledPayloadKeys são as chaves do payload que o builder já trata
-// explicitamente (Short, _file, _line, _trace) e portanto devem ser
-// puladas no fan-out genérico de Extra.
+// explicitamente (Short) e portanto devem ser puladas no fan-out
+// genérico de Extra. As demais chaves (file, line, trace, …) viram
+// _file, _line, _trace, … via fan-out — sem rename especial.
 //
 // Observação: campos GELF top-level (version, host, short_message,
 // timestamp, level, facility) NÃO são listados aqui porque o GELF spec
@@ -20,9 +21,6 @@ import (
 // "version" no payload pode virar "_version" em Extra sem conflito.
 var handledPayloadKeys = map[string]struct{}{
 	"message": {},
-	"source":  {},
-	"line":    {},
-	"trace":   {},
 }
 
 // levelToSyslog converte um level da toolkit ("debug", "info", ...) para
@@ -57,11 +55,12 @@ func levelToSyslog(level string) int32 {
 //   - _application_name = serviceName
 //   - _log_id           = "<serviceName>-mchlog-<level>"
 //   - _level_name       = level
-//   - _file             = chave "source" do payload (renomeada para evitar
-//     colidir com a coluna "source" do Graylog)
+//   - _file             = chave "file" do payload (preenchida pelo logger.go
+//     via runtime.Caller; o nome "file" evita colidir com a coluna "source"
+//     do Graylog, que vem do Host)
 //   - _line             = chave "line"
 //   - _trace            = chave "trace"
-//   - demais chaves     = prefixadas com "_" (a menos que reservadas)
+//   - demais chaves     = prefixadas com "_"
 //   - _error            = errLog.Error() quando errLog != nil
 func buildGELFMessage(serviceName, level string, content any, errLog error, cfg NetworkConfig) (*gelf.Message, error) {
 	fields, err := contentToMap(content)
@@ -91,21 +90,10 @@ func buildGELFMessage(serviceName, level string, content any, errLog error, cfg 
 	msg.Extra["_log_id"] = serviceName + "-mchlog-" + level
 	msg.Extra["_level_name"] = level
 
-	// Renomeio de source → _file para evitar colisão com a coluna
-	// "source" do Graylog (que vem de Host).
-	if v, ok := fields["source"]; ok {
-		msg.Extra["_file"] = stringify(v)
-	}
-	if v, ok := fields["line"]; ok {
-		msg.Extra["_line"] = stringify(v)
-	}
-	if v, ok := fields["trace"]; ok {
-		msg.Extra["_trace"] = stringify(v)
-	}
-
 	// Demais chaves do payload viram custom fields prefixados com "_".
-	// Pula as que já foram tratadas explicitamente (message → Short;
-	// source/line/trace → _file/_line/_trace).
+	// O logger.go já emite "file" diretamente (no lugar do antigo
+	// "source"), evitando a colisão com a coluna "source" do Graylog;
+	// não é preciso rename explícito aqui — basta o fan-out genérico.
 	for k, v := range fields {
 		if _, handled := handledPayloadKeys[k]; handled {
 			continue

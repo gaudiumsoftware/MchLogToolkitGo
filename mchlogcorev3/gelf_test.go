@@ -68,7 +68,7 @@ func TestBuildGELFMessageRequiredFields(t *testing.T) {
 // TestBuildGELFMessageCustomFields garante composição correta de
 // _application_name, _log_id, _level_name, _file e _line.
 func TestBuildGELFMessageCustomFields(t *testing.T) {
-	payload := []byte(`{"message":"hi","level":"debug","source":"internal/foo.go","line":"99","trace":"abc"}`)
+	payload := []byte(`{"message":"hi","level":"debug","file":"internal/foo.go","line":"99","trace":"abc"}`)
 	msg, err := buildGELFMessage("payments-api", "debug", payload, nil, NetworkConfig{
 		Type:   NetworkGraylogUDP,
 		Source: "pod-1",
