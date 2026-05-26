@@ -159,11 +159,3 @@ func contentToMap(content any) (map[string]any, error) {
 
 	return nil, fmt.Errorf("mchlogcorev3: unsupported content type %T", content)
 }
-
-// stringify converte qualquer valor a string, com fast-path para string.
-func stringify(v any) string {
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return fmt.Sprintf("%v", v)
-}

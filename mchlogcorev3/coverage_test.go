@@ -239,12 +239,3 @@ func TestServiceFromPathVariants(t *testing.T) {
 	}
 }
 
-// TestStringifyNonString garante que stringify converte tipos não-string.
-func TestStringifyNonString(t *testing.T) {
-	if got := stringify(42); got != "42" {
-		t.Errorf("stringify(42)=%q want 42", got)
-	}
-	if got := stringify(nil); got != "<nil>" {
-		t.Errorf("stringify(nil)=%q", got)
-	}
-}
