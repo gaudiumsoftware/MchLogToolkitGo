@@ -259,7 +259,7 @@ func TestEndToEndLeveledHitsUDPNotFile(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = MchLog.Close() })
 
-	payload := []byte(`{"message":"hello","level":"info","source":"x.go","line":"1","trace":""}`)
+	payload := []byte(`{"message":"hello","level":"info","file":"x.go","line":"1","trace":""}`)
 	MchLog.LogSubject("info", payload, nil)
 
 	raw := readDatagram(t, conn)
@@ -301,7 +301,7 @@ func TestEndToEndDomainHitsFileNotUDP(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = MchLog.Close() })
 
-	payload := []byte(`{"message":"pos_event","level":"info","source":"x.go","line":"1","trace":""}`)
+	payload := []byte(`{"message":"pos_event","level":"info","file":"x.go","line":"1","trace":""}`)
 	MchLog.LogSubject("historico_posicao_taxi", payload, nil)
 
 	expectNoDatagram(t, conn, 200*time.Millisecond)
@@ -350,7 +350,7 @@ func TestEndToEndNetworkSubjectsExtender(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = MchLog.Close() })
 
-	payload := []byte(`{"message":"pos","level":"info","source":"x.go","line":"1","trace":""}`)
+	payload := []byte(`{"message":"pos","level":"info","file":"x.go","line":"1","trace":""}`)
 	MchLog.LogSubject("historico_posicao_taxi", payload, nil)
 
 	raw := readDatagram(t, conn)

@@ -40,7 +40,7 @@ func TestLevelToSyslogUnknownDefaultsToInfo(t *testing.T) {
 // campos obrigatórios do GELF 1.1 a partir de um payload []byte JSON
 // que reproduz a saída do formatLog do logger.go.
 func TestBuildGELFMessageRequiredFields(t *testing.T) {
-	payload := []byte(`{"message":"hello","level":"info","source":"foo.go","line":"42","trace":""}`)
+	payload := []byte(`{"message":"hello","level":"info","file":"foo.go","line":"42","trace":""}`)
 	msg, err := buildGELFMessage("payments-api", "info", payload, nil, NetworkConfig{
 		Type:   NetworkGraylogUDP,
 		Source: "pod-1",
@@ -100,7 +100,7 @@ func TestBuildGELFMessageCustomFields(t *testing.T) {
 // TestBuildGELFMessageWithError garante que um errLog não-nil produz
 // _error e mantém os demais campos.
 func TestBuildGELFMessageWithError(t *testing.T) {
-	payload := []byte(`{"message":"boom","level":"error","source":"x.go","line":"7","trace":""}`)
+	payload := []byte(`{"message":"boom","level":"error","file":"x.go","line":"7","trace":""}`)
 	msg, err := buildGELFMessage("svc", "error", payload, errors.New("kaboom"), NetworkConfig{
 		Type:   NetworkGraylogUDP,
 		Source: "pod-1",
@@ -164,7 +164,7 @@ func TestBuildGELFMessageInvalidJSONReturnsError(t *testing.T) {
 // TestBuildGELFMessageSerializable confirma que a mensagem produzida
 // serializa em JSON válido com Extra inline (formato exigido pelo GELF).
 func TestBuildGELFMessageSerializable(t *testing.T) {
-	payload := []byte(`{"message":"x","level":"info","source":"a.go","line":"1","trace":""}`)
+	payload := []byte(`{"message":"x","level":"info","file":"a.go","line":"1","trace":""}`)
 	msg, err := buildGELFMessage("svc", "info", payload, nil, NetworkConfig{Type: NetworkGraylogUDP, Source: "pod-1"})
 	if err != nil {
 		t.Fatalf("build failed: %v", err)

@@ -41,7 +41,7 @@ func TestDatagramLevelMappingAllLevels(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = MchLog.Close() })
 
-			payload := []byte(`{"message":"x","level":"` + tc.level + `","source":"a.go","line":"1","trace":""}`)
+			payload := []byte(`{"message":"x","level":"` + tc.level + `","file":"a.go","line":"1","trace":""}`)
 			MchLog.LogSubject(tc.level, payload, nil)
 
 			raw := readDatagram(t, conn)

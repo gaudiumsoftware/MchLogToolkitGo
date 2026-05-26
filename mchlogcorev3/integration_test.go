@@ -35,7 +35,7 @@ func TestIntegrationSendsToRealGraylog(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = MchLog.Close() })
 
-	payload := []byte(`{"message":"integration smoke","level":"info","source":"integration_test.go","line":"1","trace":""}`)
+	payload := []byte(`{"message":"integration smoke","level":"info","file":"integration_test.go","line":"1","trace":""}`)
 	MchLog.LogSubject("info", payload, nil)
 	// UDP é fire-and-forget; a ausência de panic/erro no caller já é
 	// confirmação suficiente. A presença real no Graylog deve ser

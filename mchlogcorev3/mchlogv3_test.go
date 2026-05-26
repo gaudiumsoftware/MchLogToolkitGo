@@ -69,7 +69,7 @@ func TestGraylogUDPSendsValidGELF(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = MchLog.Close() })
 
-	payload := []byte(`{"message":"hello","level":"info","source":"x.go","line":"1","trace":""}`)
+	payload := []byte(`{"message":"hello","level":"info","file":"x.go","line":"1","trace":""}`)
 	MchLog.LogSubject("info", payload, nil)
 
 	raw := readDatagram(t, conn)
