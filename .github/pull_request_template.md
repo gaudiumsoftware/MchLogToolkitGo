@@ -24,8 +24,8 @@ Uma descrição detalhada do que este pull request muda. Inclua informações so
 - [ ] Novos e existentes testes unitários passam localmente com minhas alterações
 - [ ] Chequei se o PR cumpre os critérios de aceitação da issue relacionada
 
-## PR associado no Mch-MySQL8 (se aplicável)
-Se esta alteração depende de mudanças no [Mch-MySQL8](https://github.com/gaudiumsoftware/mch-mysql8/), informe aqui o link do PR associado.
+## PRs associados (Mch-MySQL8, outros serviços)
+Se esta alteração depende de mudanças no banco ([Mch-MySQL8](https://github.com/gaudiumsoftware/mch-mysql8/)), ou em outros serviços, informe aqui os links dos PRs associados.
 
 ## Como testar as alterações
 Instruções específicas sobre como testar as novas mudanças. Isso pode incluir comandos para executar, configurações necessárias e o que procurar para confirmar que a alteração foi bem-sucedida.
