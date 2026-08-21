@@ -18,8 +18,8 @@ import (
 const warnWindow = 60 * time.Second
 
 // destination é a estratégia interna do V3: implementações concretas
-// (graylogUDP, fileDestination) atendem este contrato e são selecionadas
-// por Protocol em Initialize.
+// (graylogUDP, fileDestination, routerDestination) atendem este contrato
+// e são selecionadas em Initialize.
 type destination interface {
 	LogSubject(subject string, content any, errLog error, ascendStackFrame ...int)
 	GetFileNameFromStreamName(subject string) string
@@ -27,8 +27,8 @@ type destination interface {
 }
 
 // LogType é o facade público do V3. Mantém uma estratégia interna
-// (file ou rede) escolhida por Protocol e delega todas as chamadas.
-// Satisfaz mchlogcore.Transport e mchlogcore.Closer.
+// (file, rede, ou roteador) escolhida em Initialize e delega todas as
+// chamadas. Satisfaz mchlogcore.Transport e mchlogcore.Closer.
 type LogType struct {
 	mu   sync.RWMutex
 	impl destination
@@ -92,28 +92,23 @@ func Initialize(path string) error {
 
 	cfg := ActiveConfig()
 
-	var impl destination
-	switch cfg.Protocol {
-	case ProtocolFile:
-		impl = newFileDestination(path)
-	case ProtocolGraylogUDP:
-		w, err := gelf.NewWriter(cfg.Addr)
-		if err != nil {
-			return fmt.Errorf("mchlogcorev3: dial GELF UDP %s: %w", cfg.Addr, err)
+	file := newFileDestination(path)
+
+	var network destination
+	if cfg.Network != nil {
+		switch cfg.Network.Type {
+		case NetworkGraylogUDP:
+			netImpl, err := newGraylogUDP(*cfg.Network, service)
+			if err != nil {
+				return err
+			}
+			network = netImpl
+		default:
+			return errors.New("mchlogcorev3: unsupported Network.Type: " + string(cfg.Network.Type))
 		}
-		if cfg.DisableGZIP {
-			w.CompressionType = gelf.CompressNone
-		} else {
-			w.CompressionType = gelf.CompressGzip
-		}
-		impl = &graylogUDP{
-			writer:      w,
-			cfg:         cfg,
-			serviceName: service,
-		}
-	default:
-		return errors.New("mchlogcorev3: unsupported Protocol: " + string(cfg.Protocol))
 	}
+
+	impl := newRouterDestination(file, network, cfg.NetworkSubjects)
 
 	// Troca o impl ativo. Se houver um impl anterior (Initialize chamado
 	// duas vezes), fecha-o fora do lock para liberar recursos (socket UDP
@@ -128,10 +123,29 @@ func Initialize(path string) error {
 	return nil
 }
 
+// newGraylogUDP abre o writer GELF UDP e devolve o impl pronto para uso.
+// Falha de dial é propagada para o caller (Initialize).
+func newGraylogUDP(cfg NetworkConfig, service string) (*graylogUDP, error) {
+	w, err := gelf.NewWriter(cfg.Addr)
+	if err != nil {
+		return nil, fmt.Errorf("mchlogcorev3: dial GELF UDP %s: %w", cfg.Addr, err)
+	}
+	if cfg.DisableGZIP {
+		w.CompressionType = gelf.CompressNone
+	} else {
+		w.CompressionType = gelf.CompressGzip
+	}
+	return &graylogUDP{
+		writer:      w,
+		cfg:         cfg,
+		serviceName: service,
+	}, nil
+}
+
 // graylogUDP envia logs em formato GELF via UDP.
 type graylogUDP struct {
 	writer      *gelf.Writer
-	cfg         DestinationConfig
+	cfg         NetworkConfig
 	serviceName string
 
 	mu       sync.Mutex

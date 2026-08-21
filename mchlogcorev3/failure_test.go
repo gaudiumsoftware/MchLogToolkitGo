@@ -46,7 +46,7 @@ func TestSendFailureDoesNotPanic(t *testing.T) {
 	addr, conn := listenUDP(t)
 	defer conn.Close()
 
-	if err := Configure(DestinationConfig{Protocol: ProtocolGraylogUDP, Addr: addr, Source: "pod-1"}); err != nil {
+	if err := Configure(DestinationConfig{Network: &NetworkConfig{Type: NetworkGraylogUDP, Addr: addr, Source: "pod-1"}}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	if err := Initialize("/applog/svc/"); err != nil {
@@ -73,7 +73,7 @@ func TestRateLimitedWarnOneLinePerWindow(t *testing.T) {
 	addr, conn := listenUDP(t)
 	defer conn.Close()
 
-	if err := Configure(DestinationConfig{Protocol: ProtocolGraylogUDP, Addr: addr, Source: "pod-1"}); err != nil {
+	if err := Configure(DestinationConfig{Network: &NetworkConfig{Type: NetworkGraylogUDP, Addr: addr, Source: "pod-1"}}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	if err := Initialize("/applog/svc/"); err != nil {
@@ -100,7 +100,7 @@ func TestRateLimitedWarnEmitsAgainAfterWindow(t *testing.T) {
 	addr, conn := listenUDP(t)
 	defer conn.Close()
 
-	if err := Configure(DestinationConfig{Protocol: ProtocolGraylogUDP, Addr: addr, Source: "pod-1"}); err != nil {
+	if err := Configure(DestinationConfig{Network: &NetworkConfig{Type: NetworkGraylogUDP, Addr: addr, Source: "pod-1"}}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	if err := Initialize("/applog/svc/"); err != nil {
@@ -112,13 +112,7 @@ func TestRateLimitedWarnEmitsAgainAfterWindow(t *testing.T) {
 		MchLog.LogSubject("info", 123, nil) // 1ª falha → warn
 		// força janela a "expirar" zerando lastWarn no backend interno
 		// (mesmo pacote, acesso a campo unexported permitido).
-		MchLog.mu.RLock()
-		impl := MchLog.impl
-		MchLog.mu.RUnlock()
-		g, ok := impl.(*graylogUDP)
-		if !ok {
-			t.Fatalf("expected *graylogUDP, got %T", impl)
-		}
+		g := currentGraylogUDP(t)
 		g.mu.Lock()
 		g.lastWarn = time.Time{}
 		g.mu.Unlock()
@@ -150,7 +144,7 @@ func TestNotConfiguredErrorMessage(t *testing.T) {
 func TestInitializeBadServicePath(t *testing.T) {
 	t.Cleanup(resetConfig)
 
-	if err := Configure(DestinationConfig{Protocol: ProtocolGraylogUDP, Addr: "127.0.0.1:1", Source: "pod-1"}); err != nil {
+	if err := Configure(DestinationConfig{Network: &NetworkConfig{Type: NetworkGraylogUDP, Addr: "127.0.0.1:1", Source: "pod-1"}}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	if err := Initialize(""); err == nil {
@@ -164,11 +158,11 @@ func TestInitializeBadServicePath(t *testing.T) {
 func TestInitializeDialFailureReturnsError(t *testing.T) {
 	t.Cleanup(resetConfig)
 
-	if err := Configure(DestinationConfig{
-		Protocol: ProtocolGraylogUDP,
-		Addr:     "no-port-no-colon",
-		Source:   "pod-1",
-	}); err != nil {
+	if err := Configure(DestinationConfig{Network: &NetworkConfig{
+		Type:   NetworkGraylogUDP,
+		Addr:   "no-port-no-colon",
+		Source: "pod-1",
+	}}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	err := Initialize("/applog/svc/")
@@ -191,17 +185,14 @@ func TestWriterWriteMessageFailureWarns(t *testing.T) {
 	addr, conn := listenUDP(t)
 	defer conn.Close()
 
-	if err := Configure(DestinationConfig{Protocol: ProtocolGraylogUDP, Addr: addr, Source: "pod-1"}); err != nil {
+	if err := Configure(DestinationConfig{Network: &NetworkConfig{Type: NetworkGraylogUDP, Addr: addr, Source: "pod-1"}}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	if err := Initialize("/applog/svc/"); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
-	g, ok := MchLog.impl.(*graylogUDP)
-	if !ok {
-		t.Fatalf("expected *graylogUDP, got %T", MchLog.impl)
-	}
+	g := currentGraylogUDP(t)
 
 	// Fecha o writer subjacente sem mexer no flag g.closed (replica a
 	// situação em que a conexão UDP foi perdida, mas o transporte ainda

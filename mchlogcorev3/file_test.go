@@ -8,14 +8,14 @@ import (
 	"testing"
 )
 
-// TestProtocolFileWritesV2LayoutAndShape garante que com ProtocolFile o
-// V3 grava o log no caminho <basePath>/<service>/<level>/<level>.log
+// TestFileOnlyWritesV2LayoutAndShape garante que sem Network configurado
+// o V3 grava o log no caminho <basePath>/<service>/<subject>/<subject>.log
 // (mesmo layout do V2) e usa a mesma JSON shape do V2.
-func TestProtocolFileWritesV2LayoutAndShape(t *testing.T) {
+func TestFileOnlyWritesV2LayoutAndShape(t *testing.T) {
 	t.Cleanup(resetConfig)
 
 	dir := t.TempDir()
-	if err := Configure(DestinationConfig{Protocol: ProtocolFile}); err != nil {
+	if err := Configure(DestinationConfig{}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	servicePath := filepath.Join(dir, "payments-api") + string(filepath.Separator)
@@ -63,13 +63,13 @@ func TestProtocolFileWritesV2LayoutAndShape(t *testing.T) {
 	}
 }
 
-// TestProtocolFileErrorPrefixesSubject garante que erros vão para
+// TestFileErrorPrefixesSubject garante que erros vão para
 // pasta err_<level>/, mantendo o comportamento do V2.
-func TestProtocolFileErrorPrefixesSubject(t *testing.T) {
+func TestFileErrorPrefixesSubject(t *testing.T) {
 	t.Cleanup(resetConfig)
 
 	dir := t.TempDir()
-	if err := Configure(DestinationConfig{Protocol: ProtocolFile}); err != nil {
+	if err := Configure(DestinationConfig{}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	servicePath := filepath.Join(dir, "svc") + string(filepath.Separator)
@@ -87,13 +87,13 @@ func TestProtocolFileErrorPrefixesSubject(t *testing.T) {
 	}
 }
 
-// TestProtocolFileGetFileNameFromStreamName devolve caminho real de
-// arquivo (delegando ao V2).
-func TestProtocolFileGetFileNameFromStreamName(t *testing.T) {
+// TestFileOnlyGetFileNameFromStreamName devolve caminho real de
+// arquivo (delegando ao V2) quando não há network configurado.
+func TestFileOnlyGetFileNameFromStreamName(t *testing.T) {
 	t.Cleanup(resetConfig)
 
 	dir := t.TempDir()
-	if err := Configure(DestinationConfig{Protocol: ProtocolFile}); err != nil {
+	if err := Configure(DestinationConfig{}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	servicePath := filepath.Join(dir, "svc") + string(filepath.Separator)
@@ -109,13 +109,13 @@ func TestProtocolFileGetFileNameFromStreamName(t *testing.T) {
 	}
 }
 
-// TestProtocolFileCloseIsNoOp documenta que Close é no-op para V3-file
+// TestFileCloseIsNoOp documenta que Close é no-op para o file impl
 // (V2 subjacente não expõe Close — decisão prévia). Idempotente.
-func TestProtocolFileCloseIsNoOp(t *testing.T) {
+func TestFileCloseIsNoOp(t *testing.T) {
 	t.Cleanup(resetConfig)
 
 	dir := t.TempDir()
-	if err := Configure(DestinationConfig{Protocol: ProtocolFile}); err != nil {
+	if err := Configure(DestinationConfig{}); err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	servicePath := filepath.Join(dir, "svc") + string(filepath.Separator)

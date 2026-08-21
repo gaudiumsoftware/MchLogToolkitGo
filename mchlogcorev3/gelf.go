@@ -63,7 +63,7 @@ func levelToSyslog(level string) int32 {
 //   - _trace            = chave "trace"
 //   - demais chaves     = prefixadas com "_" (a menos que reservadas)
 //   - _error            = errLog.Error() quando errLog != nil
-func buildGELFMessage(serviceName, level string, content any, errLog error, cfg DestinationConfig) (*gelf.Message, error) {
+func buildGELFMessage(serviceName, level string, content any, errLog error, cfg NetworkConfig) (*gelf.Message, error) {
 	fields, err := contentToMap(content)
 	if err != nil {
 		return nil, err

@@ -133,13 +133,28 @@ if err != nil {
 }
 ```
 
-## V3 - Destino unificado (arquivo ou Graylog)
-A V3 é o destino unificado da toolkit. O serviço escolhe entre **arquivo** (mesmo layout do V2) e **GELF UDP** (Graylog) configurando `DestinationConfig.Protocol`. A API do `Logger` não muda — serviços que ainda usam V1 (default) ou V2 seguem funcionando sem alteração.
+## V3 - Destino unificado (roteador por subject)
+A V3 é o destino unificado da toolkit. Internamente roteia cada chamada
+`LogSubject` por **subject**:
 
-A V3 é a forma recomendada daqui em diante. V1 e V2 continuam disponíveis para retrocompatibilidade enquanto serviços migram.
+- **Subjects "level-like"** — `test`, `debug`, `info`, `warn`, `error`,
+  `fatal`, ou seja, a saída de `logger.Info/.Warn/.Error/...` — vão para o
+  **destino de rede** (Graylog UDP/GELF) quando configurado; caso
+  contrário, caem em arquivo.
+- **Subjects de domínio** — qualquer outra string passada a `LogSubject`
+  — vão **sempre** para arquivo, no mesmo layout do V2
+  (`<basePath>/<service>/<subject>/<subject>.log`).
 
-### Modo arquivo (`ProtocolFile`)
-Comportamento idêntico ao V2: layout `<basePath>/<service>/<level>/<level>.log`, mesma JSON shape (`message`, `level`, `source`, `line`, `trace`, `timestamp`).
+Roteamento é **exclusivo** (um subject vai para um único destino) e
+**fail-loud**: se o destino de rede está configurado mas a inicialização
+falha, o caller recebe o erro — não há fallback automático para arquivo.
+
+A V3 é a forma recomendada daqui em diante. V1 e V2 continuam disponíveis
+para retrocompatibilidade enquanto serviços migram.
+
+### Modo arquivo-only
+Comportamento idêntico ao V2: layout `<basePath>/<service>/<subject>/<subject>.log`,
+mesma JSON shape (`message`, `level`, `source`, `line`, `trace`, `timestamp`).
 ```go
 import (
     mchlogtoolkitgo "github.com/gaudiumsoftware/mchlogtoolkitgo"
@@ -148,9 +163,7 @@ import (
 )
 
 func main() {
-    if err := mchlogcorev3.Configure(mchlogcorev3.DestinationConfig{
-        Protocol: mchlogcorev3.ProtocolFile,
-    }); err != nil {
+    if err := mchlogcorev3.Configure(mchlogcorev3.DestinationConfig{}); err != nil {
         panic(err)
     }
     mchlogcore.SetVersion(mchlogcore.V3)
@@ -161,8 +174,9 @@ func main() {
 }
 ```
 
-### Modo Graylog UDP (`ProtocolGraylogUDP`)
-Para `dev`/`qa` que centralizam logs no Graylog em vez de arquivo local:
+### Modo roteador (arquivo + Graylog UDP)
+Para serviços que querem level-logs no Graylog mantendo eventos de
+domínio em disco:
 ```go
 import (
     "os"
@@ -174,10 +188,13 @@ import (
 
 func main() {
     if err := mchlogcorev3.Configure(mchlogcorev3.DestinationConfig{
-        Protocol: mchlogcorev3.ProtocolGraylogUDP,
-        Addr:     "graylog.dev.internal:12201",
-        Source:   "payments-api-qa-" + os.Getenv("POD_NAME"),
-        // DisableGZIP: true, // opcional, default = compressão habilitada
+        Network: &mchlogcorev3.NetworkConfig{
+            Type:   mchlogcorev3.NetworkGraylogUDP,
+            Addr:   "graylog.dev.internal:12201",
+            Source: "payments-api-qa-" + os.Getenv("POD_NAME"),
+            // DisableGZIP: true, // opcional, default = compressão habilitada
+        },
+        // NetworkSubjects: []string{"meu_subject_custom"}, // opcional
     }); err != nil {
         panic(err)
     }
@@ -185,19 +202,23 @@ func main() {
 
     logger, _ := mchlogtoolkitgo.NewLogger("payments-api", "debug")
     logger.Initialize()
-    logger.Info("aplicação iniciada e ouvindo na porta 80")
+    logger.Info("aplicação iniciada e ouvindo na porta 80") // → Graylog
+    // Eventos de domínio continuam indo para arquivo:
+    // mchlogcorev3.MchLog.LogSubject("meu_evento_dominio", payload, nil)
 }
 ```
 
 ### Campos do `DestinationConfig`
-| Campo         | Obrigatório quando…           | Descrição                                                                            |
-|---------------|--------------------------------|--------------------------------------------------------------------------------------|
-| `Protocol`    | —                              | `ProtocolFile` (default) ou `ProtocolGraylogUDP`.                                    |
-| `Addr`        | `Protocol = ProtocolGraylogUDP`| Endereço do Graylog no formato `host:porta`.                                         |
-| `Source`      | `Protocol = ProtocolGraylogUDP`| Valor do campo GELF `host` (coluna `source` no Graylog). **Fornecido pelo serviço** — a toolkit não autodetecta. Ex.: `payments-api-qa-pod-7f8d2`. Use `mchlogcorev3.DefaultSource()` se quiser apenas o hostname. |
-| `DisableGZIP` | nunca (opcional)               | Default `false` (gzip habilitado). Aplica só ao `ProtocolGraylogUDP`.                |
+| Campo                  | Obrigatório quando…              | Descrição                                                                            |
+|------------------------|----------------------------------|--------------------------------------------------------------------------------------|
+| `Network`              | nunca (opcional)                 | Quando `nil`, todos os subjects vão para arquivo. Quando definido, subjects level-like vão para esse destino. |
+| `Network.Type`         | `Network != nil`                 | Único valor suportado hoje: `NetworkGraylogUDP`.                                     |
+| `Network.Addr`         | `Type = NetworkGraylogUDP`       | Endereço do Graylog no formato `host:porta`.                                         |
+| `Network.Source`       | `Type = NetworkGraylogUDP`       | Valor do campo GELF `host` (coluna `source` no Graylog). **Fornecido pelo serviço** — a toolkit não autodetecta. Ex.: `payments-api-qa-pod-7f8d2`. Use `mchlogcorev3.DefaultSource()` se quiser apenas o hostname. |
+| `Network.DisableGZIP`  | nunca (opcional)                 | Default `false` (gzip habilitado).                                                   |
+| `NetworkSubjects`      | requer `Network != nil`          | Lista extra de subjects que devem ir para o destino de rede em vez de arquivo. Match exato, case-sensitive. **Cuidado:** subjects usados por healthchecks ou probes (qualquer caller que chame `GetFileNameFromStreamName` esperando um caminho de arquivo) devem ficar fora desta lista. |
 
-### Como aparece no Graylog (modo `ProtocolGraylogUDP`)
+### Como aparece no Graylog
 | GELF field          | Origem                                       | Coluna/campo no Graylog |
 |---------------------|----------------------------------------------|-------------------------|
 | `host`              | `cfg.Source`                                 | `source` (default)      |
@@ -214,16 +235,23 @@ Exemplos de busca:
 - `log_id:payments-api-mchlog-info` — equivale ao arquivo `INFO`.
 - `source:*-qa-*` — todos os pods de QA (env embutido em `Source` pelo caller).
 
-### Falhas de envio (modo `ProtocolGraylogUDP`)
+### Falhas de envio (subjects roteados ao Graylog)
 UDP é fire-and-forget. Se o destino estiver inacessível, a toolkit
 **descarta a mensagem silenciosamente** e emite no máximo **uma linha em
 `stderr` a cada 60s** (`mchlogcorev3: GELF UDP send failed: ...`).
-Não há fallback automático para arquivo.
+Eventos de domínio em arquivo seguem sendo gravados normalmente — file é
+fonte de verdade para dados persistentes.
 
 ### Quando usar cada modo
-- **Produção**: `ProtocolFile` (ou seguir em V1/V2). Arquivos persistidos em `/applog/<service>/...` são a fonte de verdade.
-- **Dev/QA**: `ProtocolGraylogUDP` para concentrar logs no Graylog.
+- **Produção** e qualquer ambiente que precise rastreabilidade de
+  eventos de domínio: configure `Network` para receber level-logs no
+  Graylog e mantenha o file destination (sempre presente) gravando os
+  eventos de domínio.
+- **Sem Graylog (legado/local)**: `Configure(DestinationConfig{})` —
+  modo arquivo-only, idêntico ao V2.
 
 ### Migração de V1/V2 para V3
-Trocar `mchlogcore.SetVersion(mchlogcore.V2)` por `Configure(DestinationConfig{Protocol: ProtocolFile}) + SetVersion(V3)` mantém o comportamento bit-a-bit (mesmo layout, mesma JSON shape).
+Trocar `mchlogcore.SetVersion(mchlogcore.V2)` por
+`Configure(DestinationConfig{}) + SetVersion(V3)` mantém o comportamento
+bit-a-bit (mesmo layout, mesma JSON shape).
 V1 e V2 seguem disponíveis até a próxima onda de migração.

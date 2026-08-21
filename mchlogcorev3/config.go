@@ -1,13 +1,23 @@
-// Package mchlogcorev3 é o destino unificado da toolkit. Suporta múltiplos
-// protocolos selecionados por DestinationConfig.Protocol:
+// Package mchlogcorev3 é o destino unificado da toolkit. O V3 sempre
+// roteia chamadas LogSubject por um routerDestination que combina dois
+// impls: file (sempre presente) e network (opcional).
 //
-//   - ProtocolFile: grava em arquivo no mesmo layout do mchlogcorev2
-//     (<basePath>/<service>/<level>/<level>.log) e mesma JSON shape.
-//   - ProtocolGraylogUDP: envia em formato GELF via UDP para o Graylog.
+// Regra de roteamento (exata, case-sensitive):
 //
-// Novos protocolos (graylog-tcp, syslog, splunk-hec, etc.) podem ser
-// adicionados expondo novos valores de Protocol e a implementação
-// correspondente; a API pública não muda.
+//   - subjects "level-like" da toolkit (test, debug, info, warn, error,
+//     fatal) → network impl, se configurado; caso contrário, file.
+//   - subjects estendidos via DestinationConfig.NetworkSubjects → mesma
+//     regra dos level-like.
+//   - qualquer outro subject (eventos de domínio, ex.: historico_posicao_taxi,
+//     log_posicao_alterada, etc.) → file impl.
+//
+// O file impl usa o mesmo layout do mchlogcorev2
+// (<basePath>/<service>/<subject>/<subject>.log) e a mesma JSON shape.
+//
+// Atualmente o único tipo de network suportado é Graylog UDP (GELF).
+// Novos transportes (graylog-tcp, syslog, splunk-hec, etc.) podem ser
+// adicionados expondo novos valores de NetworkType e a implementação
+// correspondente; a API pública (LogSubject) não muda.
 package mchlogcorev3
 
 import (
@@ -16,38 +26,50 @@ import (
 	"sync"
 )
 
-// Protocol identifica o destino efetivo usado para persistir/enviar logs.
-type Protocol string
+// NetworkType identifica o transporte do impl de rede.
+type NetworkType string
 
 const (
-	// ProtocolFile grava logs em arquivo. Layout e JSON shape são os
-	// mesmos do mchlogcorev2; o caller controla o caminho via
-	// Logger.SetPath (ou usa o default /applog/).
-	ProtocolFile Protocol = "file"
-
-	// ProtocolGraylogUDP envia logs em formato GELF via UDP.
-	ProtocolGraylogUDP Protocol = "graylog-udp"
+	// NetworkGraylogUDP envia logs em formato GELF via UDP.
+	NetworkGraylogUDP NetworkType = "graylog-udp"
 )
 
-// DestinationConfig agrupa todos os parâmetros aceitos pelo V3. Os campos
-// relevantes dependem de Protocol — campos de outros protocolos são
-// ignorados pela validação.
-type DestinationConfig struct {
-	// Protocol seleciona o destino. Default: ProtocolFile.
-	Protocol Protocol
+// NetworkConfig descreve o destino de rede opcional. Quando presente em
+// DestinationConfig, subjects "level-like" (e os explicitamente listados
+// em NetworkSubjects) são enviados por aqui em vez de gravados em disco.
+type NetworkConfig struct {
+	// Type seleciona o transporte. Hoje só NetworkGraylogUDP.
+	Type NetworkType
 
 	// Addr é o endereço do destino no formato "host:porta".
-	// Obrigatório quando Protocol = ProtocolGraylogUDP.
 	Addr string
 
 	// Source é o valor gravado no campo GELF "host" (coluna "source"
-	// no Graylog). Obrigatório quando Protocol = ProtocolGraylogUDP.
-	// Fornecido pelo serviço (a toolkit não autodetecta).
+	// no Graylog). Fornecido pelo serviço (a toolkit não autodetecta).
 	Source string
 
 	// DisableGZIP desabilita a compressão GZIP do GELF UDP. Default
-	// (zero value) = GZIP habilitado. Aplica apenas a ProtocolGraylogUDP.
+	// (zero value) = GZIP habilitado.
 	DisableGZIP bool
+}
+
+// DestinationConfig agrupa os parâmetros aceitos pelo V3.
+//
+// Zero value (Network==nil, NetworkSubjects==nil) configura o V3 em modo
+// "file-only": todos os subjects vão para arquivo no mesmo layout do V2.
+type DestinationConfig struct {
+	// Network é opcional. Quando nil, todos os subjects vão para arquivo.
+	// Quando definido, subjects level-like (e os listados em
+	// NetworkSubjects) vão por aqui; o restante continua em arquivo.
+	Network *NetworkConfig
+
+	// NetworkSubjects estende a whitelist default de subjects roteados
+	// para o network impl. A whitelist default é o conjunto fixo de
+	// levels da toolkit (test, debug, info, warn, error, fatal).
+	// Match é exato e case-sensitive. Strings vazias são ignoradas.
+	//
+	// Só faz sentido com Network != nil. Configure rejeita o contrário.
+	NetworkSubjects []string
 }
 
 var (
@@ -57,26 +79,37 @@ var (
 )
 
 // Configure normaliza e armazena a configuração que será usada pelo
-// destino. Aplica default a Protocol e valida os campos obrigatórios
-// para o protocolo selecionado.
+// destino. Valida os campos obrigatórios para o transporte de rede
+// selecionado (quando presente).
+//
+// A NetworkConfig recebida é copiada antes do armazenamento, então o
+// caller pode mutar/descartar a struct após o retorno.
 func Configure(cfg DestinationConfig) error {
-	if cfg.Protocol == "" {
-		cfg.Protocol = ProtocolFile
+	if cfg.Network != nil {
+		netCfg := *cfg.Network
+		switch netCfg.Type {
+		case "":
+			return errors.New("mchlogcorev3: Network.Type is required when Network is set")
+		case NetworkGraylogUDP:
+			if netCfg.Addr == "" {
+				return errors.New("mchlogcorev3: Network.Addr is required for NetworkGraylogUDP")
+			}
+			if netCfg.Source == "" {
+				return errors.New("mchlogcorev3: Network.Source is required for NetworkGraylogUDP (caller-provided)")
+			}
+		default:
+			return errors.New("mchlogcorev3: unknown Network.Type: " + string(netCfg.Type))
+		}
+		cfg.Network = &netCfg
+	} else if len(cfg.NetworkSubjects) > 0 {
+		return errors.New("mchlogcorev3: NetworkSubjects requires Network to be set")
 	}
 
-	switch cfg.Protocol {
-	case ProtocolFile:
-		// arquivo: nada obrigatório aqui; o path vem via Logger.SetPath
-		// e o nome do serviço via NewLogger.
-	case ProtocolGraylogUDP:
-		if cfg.Addr == "" {
-			return errors.New("mchlogcorev3: Addr is required for ProtocolGraylogUDP")
-		}
-		if cfg.Source == "" {
-			return errors.New("mchlogcorev3: Source is required for ProtocolGraylogUDP (caller-provided)")
-		}
-	default:
-		return errors.New("mchlogcorev3: unknown Protocol: " + string(cfg.Protocol))
+	if len(cfg.NetworkSubjects) > 0 {
+		// Copia o slice para isolar mutações posteriores no caller.
+		dup := make([]string, len(cfg.NetworkSubjects))
+		copy(dup, cfg.NetworkSubjects)
+		cfg.NetworkSubjects = dup
 	}
 
 	cfgMu.Lock()
@@ -86,13 +119,27 @@ func Configure(cfg DestinationConfig) error {
 	return nil
 }
 
-// ActiveConfig retorna uma cópia da configuração ativa. Útil para
-// testes e para o destino ler os parâmetros já normalizados.
+// ActiveConfig retorna uma cópia profunda da configuração ativa. Útil
+// para testes e para o destino ler os parâmetros já normalizados.
 // Antes de Configure ser chamado, devolve um DestinationConfig zero-valued.
+//
+// O ponteiro Network e o slice NetworkSubjects são duplicados, então
+// callers podem mutar o resultado livremente sem afetar o estado interno
+// (simetria com Configure, que também duplica ambos na entrada).
 func ActiveConfig() DestinationConfig {
 	cfgMu.RLock()
 	defer cfgMu.RUnlock()
-	return activeCfg
+	out := activeCfg
+	if activeCfg.Network != nil {
+		n := *activeCfg.Network
+		out.Network = &n
+	}
+	if len(activeCfg.NetworkSubjects) > 0 {
+		dup := make([]string, len(activeCfg.NetworkSubjects))
+		copy(dup, activeCfg.NetworkSubjects)
+		out.NetworkSubjects = dup
+	}
+	return out
 }
 
 // IsConfigured indica se Configure já foi chamado com sucesso.
@@ -105,7 +152,7 @@ func IsConfigured() bool {
 // DefaultSource é um helper para callers que não querem compor o Source
 // manualmente. Devolve o hostname do sistema (os.Hostname) ou "unknown"
 // caso a chamada falhe ou retorne string vazia. Útil apenas para
-// ProtocolGraylogUDP.
+// NetworkGraylogUDP.
 func DefaultSource() string {
 	if h, err := os.Hostname(); err == nil && h != "" {
 		return h
