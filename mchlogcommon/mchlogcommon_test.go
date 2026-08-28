@@ -1,22 +1,16 @@
-package mchlogcommon_test
+package mchlogcommon
 
 import (
 	"bytes"
 	"encoding/json"
 	"testing"
 
-	"github.com/gaudiumsoftware/mchlogtoolkitgo/mchlogcommon"
-	"github.com/gaudiumsoftware/mchlogtoolkitgo/unittest"
 	"github.com/rs/zerolog"
+	_assert "github.com/stretchr/testify/assert"
 )
 
-func TestMain(m *testing.M) {
-	unittest.RunTests(m)
-}
-
 func TestGetJSONLogger(t *testing.T) {
-	assert, teardown := unittest.SetupTests(t)
-	defer teardown()
+	assert := _assert.New(t)
 
 	testCases := []struct {
 		name           string
@@ -131,20 +125,17 @@ func TestGetJSONLogger(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			teardownTestCase := unittest.SetupTestCase(t)
-			defer teardownTestCase(t)
-
 			var output bytes.Buffer
 			zeroLogger := zerolog.New(&output)
 
 			if testCase.expectPanic {
 				assert.Panics(func() {
-					_, _ = mchlogcommon.GetJSONLogger(&zeroLogger, testCase.content)
+					_, _ = GetJSONLogger(&zeroLogger, testCase.content)
 				})
 				return
 			}
 
-			event, err := mchlogcommon.GetJSONLogger(&zeroLogger, testCase.content)
+			event, err := GetJSONLogger(&zeroLogger, testCase.content)
 
 			if testCase.expectedErr != "" {
 				assert.Nil(event)
