@@ -1,26 +1,32 @@
-package mchlogcorev1_test
+package mchlogcorev1
 
 import (
 	"errors"
+	"fmt"
 	"net"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/gaudiumsoftware/mchlogtoolkitgo/mchlogcorev1"
-	"github.com/gaudiumsoftware/mchlogtoolkitgo/unittest"
+	_assert "github.com/stretchr/testify/assert"
 )
 
-// ccDateTimeMask espelha a máscara de rotação usada pelo pacote para compor
-// o nome do arquivo de log.
-const ccDateTimeMask = "2006010215"
+// Os testes NÃO usam t.Parallel: MchLog, _chLog e o cache mapLogger são
+// globais do pacote e seriam compartilhados entre casos paralelos.
 
-func TestMain(m *testing.M) {
-	unittest.RunTests(m)
+// subjectSeq garante subjects únicos no binário de teste, já que o cache
+// mapLogger é keyed por subject e sobrevive ao fim de cada caso.
+var subjectSeq int
+
+func uniqueSubject(prefix string) string {
+	subjectSeq++
+	return fmt.Sprintf("%s-%d", prefix, subjectSeq)
 }
 
 // expectedFileName reproduz o nome de arquivo esperado para um subject,
-// independentemente da implementação, para servir de referência aos testes.
+// servindo de referência independente da implementação.
 func expectedFileName(basePath, subject string) string {
 	ip := localIP()
 	if ip != "" {
@@ -29,11 +35,11 @@ func expectedFileName(basePath, subject string) string {
 
 	dataHora := time.Now().UTC().Format(ccDateTimeMask)
 
-	return filepath.FromSlash(filepath.Join(basePath, subject, subject+ip+"-"+dataHora+".log"))
+	return filepath.FromSlash(filepath.Join(basePath, subject, subject+ip+"-"+dataHora+ccLogFileSuffix))
 }
 
-// localIP devolve o primeiro IPv4 não-loopback da máquina, ou "" caso não
-// exista — mesma regra usada internamente pelo pacote.
+// localIP devolve o primeiro IPv4 não-loopback da máquina — mesma regra de
+// getLocalIP, reescrita aqui para servir de referência ao teste.
 func localIP() string {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
@@ -51,9 +57,148 @@ func localIP() string {
 	return ""
 }
 
+// readLogLines devolve as linhas gravadas no arquivo de log, ou nil quando o
+// arquivo não existe.
+func readLogLines(t *testing.T, fileName string) []string {
+	t.Helper()
+
+	content, err := os.ReadFile(fileName)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		t.Fatalf("Error reading the log file: %v", err)
+	}
+
+	trimmed := strings.TrimRight(string(content), "\n")
+	if trimmed == "" {
+		return nil
+	}
+
+	return strings.Split(trimmed, "\n")
+}
+
+func TestCloseFile(t *testing.T) {
+	assert := _assert.New(t)
+
+	testCases := []struct {
+		name        string
+		withFile    bool
+		closeBefore bool
+	}{
+		{
+			name: "Ignora o descritor não aberto",
+		},
+		{
+			name:     "Fecha o arquivo aberto",
+			withFile: true,
+		},
+		{
+			name:        "É seguro para um arquivo já fechado",
+			withFile:    true,
+			closeBefore: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			fileLog := fileLogType{filename: filepath.Join(t.TempDir(), "teste.log")}
+
+			if testCase.withFile {
+				file, err := os.Create(fileLog.filename)
+				assert.NoError(err)
+				fileLog.file = file
+
+				if testCase.closeBefore {
+					assert.NoError(file.Close())
+				}
+			}
+
+			assert.NotPanics(fileLog.closeFile)
+
+			if testCase.withFile && !testCase.closeBefore {
+				_, err := fileLog.file.WriteString("x")
+				assert.Error(err)
+			}
+		})
+	}
+}
+
+func TestMkDir(t *testing.T) {
+	assert := _assert.New(t)
+
+	testCases := []struct {
+		name        string
+		subDir      string
+		blockedBy   string
+		expectError bool
+	}{
+		{
+			name:   "Cria o diretório inexistente",
+			subDir: "novo",
+		},
+		{
+			name:   "Cria a árvore de diretórios inexistente",
+			subDir: "a/b/c",
+		},
+		{
+			name: "Não faz nada quando o diretório já existe",
+		},
+		{
+			name:        "Devolve erro quando o caminho está ocupado por um arquivo",
+			subDir:      "arquivo/sub",
+			blockedBy:   "arquivo",
+			expectError: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			basePath := t.TempDir()
+
+			if testCase.blockedBy != "" {
+				assert.NoError(os.WriteFile(filepath.Join(basePath, testCase.blockedBy), []byte(""), 0644))
+			}
+
+			fileLog := fileLogType{filename: filepath.Join(basePath, testCase.subDir, "teste.log")}
+
+			err := fileLog.mkDir()
+
+			if testCase.expectError {
+				assert.Error(err)
+				return
+			}
+
+			assert.NoError(err)
+			assert.DirExists(filepath.Dir(fileLog.filename))
+		})
+	}
+}
+
+func TestGetLocalIP(t *testing.T) {
+	assert := _assert.New(t)
+
+	testCases := []struct {
+		name string
+	}{
+		{
+			name: "Devolve o IPv4 não-loopback da máquina",
+		},
+		{
+			name: "É estável entre chamadas",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			assert.Equal(localIP(), getLocalIP())
+			assert.NotContains(getLocalIP(), "127.0.0.1")
+		})
+	}
+}
+
 func TestInitializeMchLog(t *testing.T) {
-	assert, teardown := unittest.SetupTests(t, "teste")
-	defer teardown()
+	assert := _assert.New(t)
 
 	testCases := []struct {
 		name string
@@ -75,31 +220,26 @@ func TestInitializeMchLog(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			teardownTestCase := unittest.SetupTestCase(t)
-			defer teardownTestCase(t)
+			InitializeMchLog(testCase.path)
 
-			mchlogcorev1.InitializeMchLog(testCase.path)
+			assert.Equal(filepath.FromSlash(testCase.path), MchLog.path)
+			assert.Equal(localIP(), MchLog.ip)
 
-			assert.Equal(
-				expectedFileName(testCase.path, "teste"),
-				mchlogcorev1.MchLog.GetFileNameFromStreamName("teste"),
-			)
+			subject := uniqueSubject("init")
+			MchLog.LogSubject(subject, map[string]any{"chave": "valor"}, nil)
 
-			mchlogcorev1.MchLog.LogSubject("teste", map[string]any{"chave": "valor"}, nil)
-
-			unittest.CompareLogs(t, assert, map[string][]string{
-				"teste": {`"chave":"valor"`},
-			})
+			lines := readLogLines(t, expectedFileName(testCase.path, subject))
+			assert.Len(lines, 1)
+			assert.Contains(lines[0], `"chave":"valor"`)
 		})
 	}
 }
 
 func TestGetFileNameFromStreamName(t *testing.T) {
-	assert, teardown := unittest.SetupTests(t)
-	defer teardown()
+	assert := _assert.New(t)
 
 	basePath := t.TempDir()
-	mchlogcorev1.InitializeMchLog(basePath)
+	InitializeMchLog(basePath)
 
 	testCases := []struct {
 		name    string
@@ -111,7 +251,7 @@ func TestGetFileNameFromStreamName(t *testing.T) {
 		},
 		{
 			name:    "Compõe o nome para um subject de erro",
-			subject: "err_teste",
+			subject: ccLogErrPrefixSubject + "teste",
 		},
 		{
 			name:    "Compõe o nome para um subject com separador",
@@ -121,145 +261,192 @@ func TestGetFileNameFromStreamName(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			teardownTestCase := unittest.SetupTestCase(t)
-			defer teardownTestCase(t)
-
 			assert.Equal(
 				expectedFileName(basePath, testCase.subject),
-				mchlogcorev1.MchLog.GetFileNameFromStreamName(testCase.subject),
+				MchLog.GetFileNameFromStreamName(testCase.subject),
 			)
 		})
 	}
 }
 
 func TestGetIP(t *testing.T) {
-	assert, teardown := unittest.SetupTests(t)
-	defer teardown()
+	assert := _assert.New(t)
 
 	testCases := []struct {
 		name string
-		path string
 	}{
 		{
 			name: "Devolve o IP local após a inicialização",
-			path: t.TempDir(),
 		},
 		{
 			name: "Mantém o IP local após reinicializar",
-			path: t.TempDir(),
 		},
 	}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			teardownTestCase := unittest.SetupTestCase(t)
-			defer teardownTestCase(t)
+			InitializeMchLog(t.TempDir())
 
-			mchlogcorev1.InitializeMchLog(testCase.path)
+			assert.Equal(localIP(), MchLog.GetIP())
+		})
+	}
+}
 
-			assert.Equal(localIP(), mchlogcorev1.MchLog.GetIP())
+func TestCheckFile(t *testing.T) {
+	assert := _assert.New(t)
+
+	basePath := t.TempDir()
+	InitializeMchLog(basePath)
+
+	// Diretório ocupado por um arquivo comum: o OpenFile do arquivo de log falha.
+	blocked := uniqueSubject("bloqueado")
+	assert.NoError(os.WriteFile(filepath.Join(basePath, blocked), []byte(""), 0644))
+
+	testCases := []struct {
+		name         string
+		subject      string
+		callTwice    bool
+		reinitialize bool
+		expectError  bool
+	}{
+		{
+			name:    "Cria o logger na primeira chamada",
+			subject: uniqueSubject("check"),
+		},
+		{
+			name:      "Reaproveita o logger em cache",
+			subject:   uniqueSubject("check"),
+			callTwice: true,
+		},
+		{
+			name:         "Recria o logger quando o caminho muda",
+			subject:      uniqueSubject("check"),
+			reinitialize: true,
+		},
+		{
+			name:        "Propaga o erro quando o arquivo não pode ser aberto",
+			subject:     blocked,
+			expectError: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			logger, err := MchLog.checkFile(testCase.subject)
+
+			if testCase.expectError {
+				assert.Error(err)
+				assert.Nil(logger)
+				return
+			}
+
+			assert.NoError(err)
+			assert.NotNil(logger)
+
+			if testCase.callTwice {
+				cached, err := MchLog.checkFile(testCase.subject)
+				assert.NoError(err)
+				assert.Same(logger, cached)
+			}
+
+			if testCase.reinitialize {
+				InitializeMchLog(t.TempDir())
+				t.Cleanup(func() { InitializeMchLog(basePath) })
+
+				recreated, err := MchLog.checkFile(testCase.subject)
+				assert.NoError(err)
+				assert.NotSame(logger, recreated)
+			}
 		})
 	}
 }
 
 func TestLogSubject(t *testing.T) {
-	assert, teardown := unittest.SetupTests(t, "teste", "err_teste")
-	defer teardown()
+	assert := _assert.New(t)
 
 	basePath := t.TempDir()
-	mchlogcorev1.InitializeMchLog(basePath)
+	InitializeMchLog(basePath)
 
 	testCases := []struct {
 		name             string
-		subject          string
+		emptySubject     bool
 		contents         []any
 		errLog           error
 		ascendStackFrame []int
-		expectedLogs     map[string][]string
+		expectedLines    []string
 	}{
 		{
 			name:         "Ignora subject vazio",
-			subject:      "",
+			emptySubject: true,
 			contents:     []any{map[string]any{"chave": "valor"}},
-			expectedLogs: map[string][]string{},
 		},
 		{
-			name:     "Grava um map",
-			subject:  "teste",
-			contents: []any{map[string]any{"mapa1": "aaa", "mapa2": 22}},
-			expectedLogs: map[string][]string{
-				"teste": {`{"mapa1":"aaa","mapa2":22,`},
-			},
+			name:          "Grava um map",
+			contents:      []any{map[string]any{"mapa1": "aaa", "mapa2": 22}},
+			expectedLines: []string{`{"mapa1":"aaa","mapa2":22,`},
 		},
 		{
-			name:     "Grava uma string json",
-			subject:  "teste",
-			contents: []any{`{"testmsg":"some msg"}`},
-			expectedLogs: map[string][]string{
-				"teste": {`{"testmsg":"some msg",`},
-			},
+			name:          "Grava uma string json",
+			contents:      []any{`{"testmsg":"some msg"}`},
+			expectedLines: []string{`{"testmsg":"some msg",`},
 		},
 		{
-			name:     "Grava um []byte json",
-			subject:  "teste",
-			contents: []any{[]byte(`{"tick":10}`)},
-			expectedLogs: map[string][]string{
-				"teste": {`{"tick":10,`},
-			},
+			name:          "Grava um []byte json",
+			contents:      []any{[]byte(`{"tick":10}`)},
+			expectedLines: []string{`{"tick":10,`},
 		},
 		{
-			name:     "Grava um slice de pares chave/valor",
-			subject:  "teste",
-			contents: []any{[]any{"key_array1", 22, "key_array2", "55"}},
-			expectedLogs: map[string][]string{
-				"teste": {`{"key_array1":22,"key_array2":"55",`},
-			},
+			name:          "Grava um slice de pares chave/valor",
+			contents:      []any{[]any{"key_array1", 22, "key_array2", "55"}},
+			expectedLines: []string{`{"key_array1":22,"key_array2":"55",`},
 		},
 		{
-			name:     "Reaproveita o arquivo em chamadas consecutivas",
-			subject:  "teste",
-			contents: []any{map[string]any{"seq": 1}, map[string]any{"seq": 2}},
-			expectedLogs: map[string][]string{
-				"teste": {`{"seq":1,`, `{"seq":2,`},
-			},
+			name:          "Reaproveita o arquivo em chamadas consecutivas",
+			contents:      []any{map[string]any{"seq": 1}, map[string]any{"seq": 2}},
+			expectedLines: []string{`{"seq":1,`, `{"seq":2,`},
 		},
 		{
-			name:     "Grava no subject prefixado quando há erro",
-			subject:  "teste",
-			contents: []any{map[string]any{"chave": "valor"}},
-			errLog:   errors.New("isto é um erro forçado"),
-			expectedLogs: map[string][]string{
-				"err_teste": {`"error":"isto é um erro forçado"`},
-			},
+			name:          "Grava no subject prefixado quando há erro",
+			contents:      []any{map[string]any{"chave": "valor"}},
+			errLog:        errors.New("isto é um erro forçado"),
+			expectedLines: []string{`"error":"isto é um erro forçado"`},
 		},
 		{
 			name:             "Respeita o ascendStackFrame informado",
-			subject:          "teste",
 			contents:         []any{map[string]any{"chave": "valor"}},
 			errLog:           errors.New("erro com stack frame"),
 			ascendStackFrame: []int{2},
-			expectedLogs: map[string][]string{
-				"err_teste": {`"error":"erro com stack frame"`},
-			},
+			expectedLines:    []string{`"error":"erro com stack frame"`},
 		},
 		{
-			name:         "Não grava conteúdo de tipo não suportado",
-			subject:      "teste",
-			contents:     []any{42},
-			expectedLogs: map[string][]string{},
+			name:     "Não grava conteúdo de tipo não suportado",
+			contents: []any{42},
 		},
 	}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			teardownTestCase := unittest.SetupTestCase(t)
-			defer teardownTestCase(t)
-
-			for _, content := range testCase.contents {
-				mchlogcorev1.MchLog.LogSubject(testCase.subject, content, testCase.errLog, testCase.ascendStackFrame...)
+			subject := uniqueSubject("log")
+			if testCase.emptySubject {
+				subject = ""
 			}
 
-			unittest.CompareLogs(t, assert, testCase.expectedLogs)
+			for _, content := range testCase.contents {
+				MchLog.LogSubject(subject, content, testCase.errLog, testCase.ascendStackFrame...)
+			}
+
+			fileSubject := subject
+			if testCase.errLog != nil {
+				fileSubject = ccLogErrPrefixSubject + subject
+			}
+
+			lines := readLogLines(t, expectedFileName(basePath, fileSubject))
+			assert.Len(lines, len(testCase.expectedLines))
+
+			for i, expected := range testCase.expectedLines {
+				assert.Contains(lines[i], expected)
+				assert.Contains(lines[i], `"`+ccLogDataHora+`":"`+time.Now().UTC().Format("2006-01-02 15:04:05"))
+			}
 		})
 	}
 }
