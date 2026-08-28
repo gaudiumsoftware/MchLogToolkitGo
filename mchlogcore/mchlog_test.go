@@ -1,8 +1,9 @@
-package mchlogcore_test
+package mchlogcore
 
 import (
 	"bytes"
 	"compress/gzip"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -11,40 +12,50 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gaudiumsoftware/mchlogtoolkitgo"
-	"github.com/gaudiumsoftware/mchlogtoolkitgo/mchlogcore"
+	"github.com/gaudiumsoftware/mchlogtoolkitgo/mchlogcorev1"
+	"github.com/gaudiumsoftware/mchlogtoolkitgo/mchlogcorev2"
 	"github.com/gaudiumsoftware/mchlogtoolkitgo/mchlogcorev3"
-	"github.com/gaudiumsoftware/mchlogtoolkitgo/unittest"
-	"github.com/gaudiumsoftware/mchlogtoolkitgo/unittest/logger"
+	_assert "github.com/stretchr/testify/assert"
 )
 
-// mockPath é o diretório usado pelo logger compartilhado dos testes, para o
-// qual o facade é devolvido ao final de cada caso.
-const mockPath = mchlogtoolkitgo.DebugPath + logger.ServiceName + "/"
+// Os testes NÃO usam t.Parallel: currentVersion, current e os globais dos
+// pacotes de destino são compartilhados.
 
 // initPath é o caminho usado por todos os casos ao inicializar o facade.
 // É único no pacote porque o transporte V2 (usado direto e por baixo do V3 em
 // modo arquivo) mantém um cache de loggers por subject que sobrevive a novas
 // inicializações — apontar cada caso para um diretório diferente faria as
 // gravações caírem no diretório do primeiro caso.
-const initPath = mchlogtoolkitgo.DebugPath + "core-tests/servico/"
+var initPath string
 
 // v1FileName casa com o layout de arquivo do V1: <subject>[-<ip>]-<YYYYMMDDHH>.log
-var v1FileName = regexp.MustCompile(`teste(-[0-9.]+)?-\d{10}\.log$`)
+var v1FileName = regexp.MustCompile(`(-[0-9.]+)?-\d{10}\.log$`)
 
-func TestMain(m *testing.M) {
-	unittest.RunTests(m)
+// subjectSeq garante subjects únicos no binário de teste, pelo mesmo motivo
+// que initPath é único.
+var subjectSeq int
+
+func uniqueSubject(prefix string) string {
+	subjectSeq++
+	return fmt.Sprintf("%s-%d", prefix, subjectSeq)
 }
 
-// restoreFacade devolve o facade ao transporte e ao caminho esperados pelos
-// helpers de unittest depois que um caso troca a versão ativa.
-func restoreFacade(t *testing.T) {
-	t.Helper()
+func TestMain(m *testing.M) {
+	baseDir, err := os.MkdirTemp("", "mchlogcore-test")
+	if err != nil {
+		fmt.Println("Failed to create the temp dir for the tests:", err)
+		os.Exit(1)
+	}
 
-	t.Cleanup(func() {
-		mchlogcore.SetVersion(mchlogcore.V1)
-		mchlogcore.InitializeMchLog(mockPath)
-	})
+	initPath = filepath.Join(baseDir, "servico") + string(filepath.Separator)
+
+	code := m.Run()
+
+	if err := os.RemoveAll(baseDir); err != nil {
+		fmt.Println("Failed to remove the temp dir after all tests:", err)
+	}
+
+	os.Exit(code)
 }
 
 // listenUDP sobe um listener UDP local que faz o papel do Graylog.
@@ -92,106 +103,131 @@ func readDatagram(t *testing.T, conn net.PacketConn) string {
 	return string(out)
 }
 
-// localIP devolve o primeiro IPv4 não-loopback da máquina, mesma regra usada
-// pelo transporte V1.
-func localIP() string {
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return ""
+// selectTransport configura o V3 quando necessário, ativa a versão pedida e
+// inicializa o facade, devolvendo o endereço do listener UDP usado.
+func selectTransport(t *testing.T, assert *_assert.Assertions, version LogVersion, protocol mchlogcorev3.Protocol) (string, net.PacketConn) {
+	t.Helper()
+
+	t.Cleanup(func() {
+		_ = MchLog.Close()
+		SetVersion(V1)
+	})
+
+	addr, conn := listenUDP(t)
+
+	if protocol != "" {
+		assert.NoError(mchlogcorev3.Configure(mchlogcorev3.DestinationConfig{
+			Protocol: protocol,
+			Addr:     addr,
+			Source:   "pod-1",
+		}))
 	}
 
-	for _, address := range addrs {
-		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
-				return ipnet.IP.String()
-			}
-		}
-	}
+	SetVersion(version)
+	InitializeMchLog(initPath)
 
-	return ""
+	return addr, conn
 }
 
-func TestSetVersion(t *testing.T) {
-	assert, teardown := unittest.SetupTests(t)
-	defer teardown()
+func TestTransportFor(t *testing.T) {
+	assert := _assert.New(t)
 
 	testCases := []struct {
-		name       string
-		version    mchlogcore.LogVersion
-		protocol   mchlogcorev3.Protocol
-		expectedIP string
+		name     string
+		version  LogVersion
+		expected Transport
 	}{
 		{
-			name:       "V1 seleciona o transporte de arquivo com IP no nome",
-			version:    mchlogcore.V1,
-			expectedIP: localIP(),
+			name:     "V1 mapeia para o destino de arquivo com rotação",
+			version:  V1,
+			expected: &mchlogcorev1.MchLog,
 		},
 		{
-			name:    "V2 seleciona o transporte de arquivo simples",
-			version: mchlogcore.V2,
+			name:     "V2 mapeia para o destino de arquivo simples",
+			version:  V2,
+			expected: &mchlogcorev2.MchLog,
 		},
 		{
-			name:     "V3 seleciona o transporte unificado em modo arquivo",
-			version:  mchlogcore.V3,
-			protocol: mchlogcorev3.ProtocolFile,
+			name:     "V3 mapeia para o destino unificado",
+			version:  V3,
+			expected: &mchlogcorev3.MchLog,
 		},
 		{
-			name:     "V3 seleciona o transporte unificado em modo Graylog UDP",
-			version:  mchlogcore.V3,
-			protocol: mchlogcorev3.ProtocolGraylogUDP,
+			name:     "Versão desconhecida cai no V1",
+			version:  LogVersion(99),
+			expected: &mchlogcorev1.MchLog,
 		},
 	}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			teardownTestCase := unittest.SetupTestCase(t)
-			defer teardownTestCase(t)
+			assert.Same(testCase.expected, transportFor(testCase.version))
+		})
+	}
+}
 
-			restoreFacade(t)
+func TestSetVersion(t *testing.T) {
+	assert := _assert.New(t)
 
-			addr, _ := listenUDP(t)
-			if testCase.protocol != "" {
-				assert.NoError(mchlogcorev3.Configure(mchlogcorev3.DestinationConfig{
-					Protocol: testCase.protocol,
-					Addr:     addr,
-					Source:   "pod-1",
-				}))
-			}
+	testCases := []struct {
+		name     string
+		version  LogVersion
+		expected Transport
+	}{
+		{
+			name:     "Ativa o transporte V1",
+			version:  V1,
+			expected: &mchlogcorev1.MchLog,
+		},
+		{
+			name:     "Ativa o transporte V2",
+			version:  V2,
+			expected: &mchlogcorev2.MchLog,
+		},
+		{
+			name:     "Ativa o transporte V3",
+			version:  V3,
+			expected: &mchlogcorev3.MchLog,
+		},
+	}
 
-			mchlogcore.SetVersion(testCase.version)
-			mchlogcore.InitializeMchLog(initPath)
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Cleanup(func() { SetVersion(V1) })
 
-			assert.Equal(testCase.expectedIP, mchlogcore.MchLog.GetIP())
+			SetVersion(testCase.version)
+
+			assert.Equal(testCase.version, currentVersion)
+			assert.Same(testCase.expected, current)
 		})
 	}
 }
 
 func TestGetFileNameFromStreamName(t *testing.T) {
-	assert, teardown := unittest.SetupTests(t, "teste")
-	defer teardown()
+	assert := _assert.New(t)
 
 	testCases := []struct {
 		name        string
-		version     mchlogcore.LogVersion
+		version     LogVersion
 		protocol    mchlogcorev3.Protocol
 		expectedUDP bool
 	}{
 		{
 			name:    "V1 compõe o nome com IP e hora",
-			version: mchlogcore.V1,
+			version: V1,
 		},
 		{
 			name:    "V2 compõe o nome com o subject",
-			version: mchlogcore.V2,
+			version: V2,
 		},
 		{
 			name:     "V3 em modo arquivo compõe o nome como o V2",
-			version:  mchlogcore.V3,
+			version:  V3,
 			protocol: mchlogcorev3.ProtocolFile,
 		},
 		{
 			name:        "V3 em modo Graylog UDP devolve o descritor de rede",
-			version:     mchlogcore.V3,
+			version:     V3,
 			protocol:    mchlogcorev3.ProtocolGraylogUDP,
 			expectedUDP: true,
 		},
@@ -199,70 +235,53 @@ func TestGetFileNameFromStreamName(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			teardownTestCase := unittest.SetupTestCase(t)
-			defer teardownTestCase(t)
+			addr, _ := selectTransport(t, assert, testCase.version, testCase.protocol)
 
-			restoreFacade(t)
+			subject := uniqueSubject("nome")
+			fileName := MchLog.GetFileNameFromStreamName(subject)
 
-			addr, _ := listenUDP(t)
-			if testCase.protocol != "" {
-				assert.NoError(mchlogcorev3.Configure(mchlogcorev3.DestinationConfig{
-					Protocol: testCase.protocol,
-					Addr:     addr,
-					Source:   "pod-1",
-				}))
-			}
-
-			mchlogcore.SetVersion(testCase.version)
-			mchlogcore.InitializeMchLog(initPath)
-
-			fileName := mchlogcore.MchLog.GetFileNameFromStreamName("teste")
-
-			if testCase.expectedUDP {
-				assert.Equal("udp://"+addr+"/teste", fileName)
-				return
-			}
-
-			if testCase.version == mchlogcore.V1 {
+			switch {
+			case testCase.expectedUDP:
+				assert.Equal("udp://"+addr+"/"+subject, fileName)
+			case testCase.version == V1:
 				assert.Regexp(v1FileName, fileName)
-				return
+				assert.Contains(fileName, filepath.Join(initPath, subject))
+			default:
+				assert.Equal(filepath.Join(initPath, subject, subject+".log"), fileName)
 			}
-
-			assert.Equal(filepath.Join(initPath, "teste", "teste.log"), fileName)
 		})
 	}
 }
 
 func TestLogSubject(t *testing.T) {
-	assert, teardown := unittest.SetupTests(t, "teste")
-	defer teardown()
+	assert := _assert.New(t)
 
 	testCases := []struct {
 		name        string
-		version     mchlogcore.LogVersion
+		version     LogVersion
 		protocol    mchlogcorev3.Protocol
 		expectedUDP bool
 		expected    string
 	}{
 		{
-			name:     "V1 delega para o transporte de arquivo com rotação",
-			version:  mchlogcore.V1,
+			name:     "V1 delega para o destino de arquivo com rotação",
+			version:  V1,
 			expected: `"chave":"valor"`,
 		},
 		{
-			name:     "V2 delega para o transporte de arquivo simples",
-			version:  mchlogcore.V2,
+			name:     "V2 delega para o destino de arquivo simples",
+			version:  V2,
 			expected: `"chave":"valor"`,
 		},
 		{
-			name:     "V3 em modo arquivo delega para o transporte unificado",
-			version:  mchlogcore.V3,
+			name:     "V3 em modo arquivo delega para o destino unificado",
+			version:  V3,
 			protocol: mchlogcorev3.ProtocolFile,
 			expected: `"chave":"valor"`,
 		},
 		{
 			name:        "V3 em modo Graylog UDP envia o datagrama GELF",
-			version:     mchlogcore.V3,
+			version:     V3,
 			protocol:    mchlogcorev3.ProtocolGraylogUDP,
 			expectedUDP: true,
 			expected:    `"_application_name":"servico"`,
@@ -271,36 +290,22 @@ func TestLogSubject(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			teardownTestCase := unittest.SetupTestCase(t)
-			defer teardownTestCase(t)
-
-			restoreFacade(t)
-
-			addr, conn := listenUDP(t)
-			if testCase.protocol != "" {
-				assert.NoError(mchlogcorev3.Configure(mchlogcorev3.DestinationConfig{
-					Protocol: testCase.protocol,
-					Addr:     addr,
-					Source:   "pod-1",
-				}))
-			}
-
-			mchlogcore.SetVersion(testCase.version)
-			mchlogcore.InitializeMchLog(initPath)
+			_, conn := selectTransport(t, assert, testCase.version, testCase.protocol)
 
 			if testCase.expectedUDP {
 				// Descarta o datagrama do log de inicialização.
 				readDatagram(t, conn)
 			}
 
-			mchlogcore.MchLog.LogSubject("teste", map[string]any{"chave": "valor"}, nil)
+			subject := uniqueSubject("log")
+			MchLog.LogSubject(subject, map[string]any{"chave": "valor"}, nil)
 
 			if testCase.expectedUDP {
 				assert.Contains(readDatagram(t, conn), testCase.expected)
 				return
 			}
 
-			content, err := os.ReadFile(mchlogcore.MchLog.GetFileNameFromStreamName("teste"))
+			content, err := os.ReadFile(MchLog.GetFileNameFromStreamName(subject))
 			assert.NoError(err)
 			assert.Contains(string(content), testCase.expected)
 		})
@@ -308,151 +313,126 @@ func TestLogSubject(t *testing.T) {
 }
 
 func TestGetIP(t *testing.T) {
-	assert, teardown := unittest.SetupTests(t)
-	defer teardown()
+	assert := _assert.New(t)
 
 	testCases := []struct {
-		name       string
-		version    mchlogcore.LogVersion
-		protocol   mchlogcorev3.Protocol
-		expectedIP string
+		name          string
+		version       LogVersion
+		protocol      mchlogcorev3.Protocol
+		delegatesToV1 bool
 	}{
 		{
-			name:       "Delega para o V1 quando ele é o transporte ativo",
-			version:    mchlogcore.V1,
-			expectedIP: localIP(),
+			name:          "Delega para o V1 quando ele é o transporte ativo",
+			version:       V1,
+			delegatesToV1: true,
 		},
 		{
 			name:    "Devolve vazio para o V2",
-			version: mchlogcore.V2,
+			version: V2,
 		},
 		{
 			name:     "Devolve vazio para o V3",
-			version:  mchlogcore.V3,
+			version:  V3,
 			protocol: mchlogcorev3.ProtocolFile,
 		},
 	}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			teardownTestCase := unittest.SetupTestCase(t)
-			defer teardownTestCase(t)
+			selectTransport(t, assert, testCase.version, testCase.protocol)
 
-			restoreFacade(t)
-
-			if testCase.protocol != "" {
-				assert.NoError(mchlogcorev3.Configure(mchlogcorev3.DestinationConfig{
-					Protocol: testCase.protocol,
-				}))
+			if testCase.delegatesToV1 {
+				assert.Equal(mchlogcorev1.MchLog.GetIP(), MchLog.GetIP())
+				return
 			}
 
-			mchlogcore.SetVersion(testCase.version)
-			mchlogcore.InitializeMchLog(initPath)
-
-			assert.Equal(testCase.expectedIP, mchlogcore.MchLog.GetIP())
+			assert.Equal("", MchLog.GetIP())
 		})
 	}
 }
 
 func TestClose(t *testing.T) {
-	assert, teardown := unittest.SetupTests(t)
-	defer teardown()
+	assert := _assert.New(t)
 
 	testCases := []struct {
 		name     string
-		version  mchlogcore.LogVersion
+		version  LogVersion
 		protocol mchlogcorev3.Protocol
 	}{
 		{
 			name:    "É no-op para o V1",
-			version: mchlogcore.V1,
+			version: V1,
 		},
 		{
 			name:    "É no-op para o V2",
-			version: mchlogcore.V2,
+			version: V2,
 		},
 		{
 			name:     "É no-op para o V3 em modo arquivo",
-			version:  mchlogcore.V3,
+			version:  V3,
 			protocol: mchlogcorev3.ProtocolFile,
 		},
 		{
 			name:     "Libera o socket do V3 em modo Graylog UDP",
-			version:  mchlogcore.V3,
+			version:  V3,
 			protocol: mchlogcorev3.ProtocolGraylogUDP,
 		},
 	}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			teardownTestCase := unittest.SetupTestCase(t)
-			defer teardownTestCase(t)
+			selectTransport(t, assert, testCase.version, testCase.protocol)
 
-			restoreFacade(t)
-
-			addr, _ := listenUDP(t)
-			if testCase.protocol != "" {
-				assert.NoError(mchlogcorev3.Configure(mchlogcorev3.DestinationConfig{
-					Protocol: testCase.protocol,
-					Addr:     addr,
-					Source:   "pod-1",
-				}))
-			}
-
-			mchlogcore.SetVersion(testCase.version)
-			mchlogcore.InitializeMchLog(initPath)
-
-			assert.NoError(mchlogcore.MchLog.Close())
-			assert.NoError(mchlogcore.MchLog.Close())
+			assert.NoError(MchLog.Close())
+			assert.NoError(MchLog.Close())
 		})
 	}
 }
 
 func TestInitializeMchLog(t *testing.T) {
-	assert, teardown := unittest.SetupTests(t)
-	defer teardown()
+	assert := _assert.New(t)
 
 	testCases := []struct {
-		name        string
-		version     mchlogcore.LogVersion
-		protocol    mchlogcorev3.Protocol
-		addr        string
-		expectedLog string
+		name            string
+		version         LogVersion
+		protocol        mchlogcorev3.Protocol
+		badAddr         bool
+		expectedVersion string
 	}{
 		{
-			name:        "Registra a inicialização do V1",
-			version:     mchlogcore.V1,
-			expectedLog: `"version":"V1"`,
+			name:            "Registra a inicialização do V1",
+			version:         V1,
+			expectedVersion: `"version":"V1"`,
 		},
 		{
-			name:        "Registra a inicialização do V2",
-			version:     mchlogcore.V2,
-			expectedLog: `"version":"V2"`,
+			name:            "Registra a inicialização do V2",
+			version:         V2,
+			expectedVersion: `"version":"V2"`,
 		},
 		{
-			name:        "Registra a inicialização do V3",
-			version:     mchlogcore.V3,
-			protocol:    mchlogcorev3.ProtocolFile,
-			expectedLog: `"version":"V3"`,
+			name:            "Registra a inicialização do V3",
+			version:         V3,
+			protocol:        mchlogcorev3.ProtocolFile,
+			expectedVersion: `"version":"V3"`,
 		},
 		{
 			name:     "Não registra quando a inicialização do V3 falha",
-			version:  mchlogcore.V3,
+			version:  V3,
 			protocol: mchlogcorev3.ProtocolGraylogUDP,
-			addr:     "endereco-invalido",
+			badAddr:  true,
 		},
 	}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			teardownTestCase := unittest.SetupTestCase(t)
-			defer teardownTestCase(t)
+			t.Cleanup(func() {
+				_ = MchLog.Close()
+				SetVersion(V1)
+			})
 
-			restoreFacade(t)
-
-			addr := testCase.addr
-			if addr == "" {
-				addr, _ = listenUDP(t)
+			addr, _ := listenUDP(t)
+			if testCase.badAddr {
+				addr = "endereco-invalido"
 			}
 
 			if testCase.protocol != "" {
@@ -463,17 +443,17 @@ func TestInitializeMchLog(t *testing.T) {
 				}))
 			}
 
-			mchlogcore.SetVersion(testCase.version)
+			SetVersion(testCase.version)
 
 			// Zera o destino do V3 para que uma inicialização que falha não
 			// deixe o destino da execução anterior ativo.
-			assert.NoError(mchlogcore.MchLog.Close())
+			assert.NoError(MchLog.Close())
 
-			mchlogcore.InitializeMchLog(initPath)
+			InitializeMchLog(initPath)
 
-			fileName := mchlogcore.MchLog.GetFileNameFromStreamName("info")
+			fileName := MchLog.GetFileNameFromStreamName("info")
 
-			if testCase.expectedLog == "" {
+			if testCase.expectedVersion == "" {
 				assert.Equal("", fileName)
 				return
 			}
@@ -481,7 +461,7 @@ func TestInitializeMchLog(t *testing.T) {
 			content, err := os.ReadFile(fileName)
 			assert.NoError(err)
 			assert.Contains(string(content), `"message":"MchLogToolkit initialized"`)
-			assert.Contains(string(content), testCase.expectedLog)
+			assert.Contains(string(content), testCase.expectedVersion)
 		})
 	}
 }
