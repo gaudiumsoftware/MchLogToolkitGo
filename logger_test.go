@@ -1,192 +1,633 @@
-package mchlogtoolkitgo
+package mchlogtoolkitgo_test
 
 import (
-	"encoding/json"
-	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/gaudiumsoftware/mchlogtoolkitgo"
+	"github.com/gaudiumsoftware/mchlogtoolkitgo/mchlogcore"
+	"github.com/gaudiumsoftware/mchlogtoolkitgo/unittest"
+	"github.com/gaudiumsoftware/mchlogtoolkitgo/unittest/logger"
 )
 
-func TestValidLogLevel(t *testing.T) {
-	levels := []string{DebugLevel, InfoLevel, WarnLevel, ErrorLevel}
-	for _, level := range levels {
-		t.Run(level, func(t *testing.T) {
-			logger, err := NewLogger("test-service", level)
-			if err != nil {
-				t.Errorf("error creating logger: %v", err)
+func TestMain(m *testing.M) {
+	unittest.RunTests(m)
+}
+
+// restoreSharedLogger devolve o logger compartilhado pelos testes ao estado
+// esperado por `unittest`: nível debug e logs em <DebugPath>/<ServiceName>/.
+// Necessário nos casos que reconfiguram o path ou o nível globais.
+func restoreSharedLogger(t *testing.T) {
+	t.Helper()
+
+	t.Cleanup(func() {
+		if err := logger.Logger.SetLevel(mchlogtoolkitgo.DebugLevel); err != nil {
+			t.Fatalf("Error restoring the shared logger level: %v", err)
+		}
+
+		logger.Logger.SetPath(mchlogtoolkitgo.DebugPath)
+		logger.Logger.Initialize()
+	})
+}
+
+func TestNewLogger(t *testing.T) {
+	assert, teardown := unittest.SetupTests(t)
+	defer teardown()
+
+	testCases := []struct {
+		name         string
+		service      string
+		level        string
+		expectedErr  string
+		expectLogger bool
+	}{
+		{
+			name:         "Cria o logger com o nível debug",
+			service:      "test-service",
+			level:        mchlogtoolkitgo.DebugLevel,
+			expectLogger: true,
+		},
+		{
+			name:         "Cria o logger com o nível info",
+			service:      "test-service",
+			level:        mchlogtoolkitgo.InfoLevel,
+			expectLogger: true,
+		},
+		{
+			name:         "Cria o logger com o nível warn",
+			service:      "test-service",
+			level:        mchlogtoolkitgo.WarnLevel,
+			expectLogger: true,
+		},
+		{
+			name:         "Cria o logger com o nível error",
+			service:      "test-service",
+			level:        mchlogtoolkitgo.ErrorLevel,
+			expectLogger: true,
+		},
+		{
+			name:         "Cria o logger com o nível fatal",
+			service:      "test-service",
+			level:        mchlogtoolkitgo.FatalLevel,
+			expectLogger: true,
+		},
+		{
+			name:         "Cria o logger com o nível test",
+			service:      "test-service",
+			level:        mchlogtoolkitgo.TestLevel,
+			expectLogger: true,
+		},
+		{
+			name:         "Normaliza o nível informado em caixa alta",
+			service:      "test-service",
+			level:        "DEBUG",
+			expectLogger: true,
+		},
+		{
+			name:        "Rejeita nome de serviço vazio",
+			service:     "",
+			level:       mchlogtoolkitgo.DebugLevel,
+			expectedErr: "service name is required",
+		},
+		{
+			name:        "Rejeita nível desconhecido",
+			service:     "test-service",
+			level:       "INVALID",
+			expectedErr: "invalid log level",
+		},
+		{
+			name:        "Rejeita nível vazio",
+			service:     "test-service",
+			level:       "",
+			expectedErr: "invalid log level",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			teardownTestCase := unittest.SetupTestCase(t)
+			defer teardownTestCase(t)
+
+			log, err := mchlogtoolkitgo.NewLogger(testCase.service, testCase.level)
+
+			if testCase.expectedErr != "" {
+				assert.Nil(log)
+				assert.EqualError(err, testCase.expectedErr)
+				return
 			}
 
-			if logger.level != level {
-				t.Errorf("level is invalid")
-			}
+			assert.NoError(err)
+			assert.NotNil(log)
 		})
-	}
-}
-
-func TestInvalidLogLevel(t *testing.T) {
-	_, err := NewLogger("test-service", "INVALID")
-	if err == nil {
-		t.Errorf("error was expected")
-	}
-}
-
-func TestInvalidLoggerFields(t *testing.T) {
-	_, err := NewLogger("", "")
-	if err == nil {
-		t.Errorf("error was expected")
 	}
 }
 
 func TestSetPath(t *testing.T) {
-	logger, err := NewLogger("test-service", DebugLevel)
-	if err != nil {
-		t.Errorf("error creating logger: %v", err)
+	assert, teardown := unittest.SetupTests(t)
+	defer teardown()
+
+	testCases := []struct {
+		name        string
+		path        string
+		expectPanic bool
+	}{
+		{
+			name: "Aceita um caminho relativo",
+			path: mchlogtoolkitgo.DebugPath,
+		},
+		{
+			name: "Aceita um caminho absoluto",
+			path: t.TempDir() + "/",
+		},
+		{
+			name:        "Entra em panic com caminho vazio",
+			path:        "",
+			expectPanic: true,
+		},
 	}
 
-	logger.SetPath("test-path")
-	if logger.path != "test-path" {
-		t.Errorf("path is invalid")
-	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			teardownTestCase := unittest.SetupTestCase(t)
+			defer teardownTestCase(t)
 
-	assertPanic(t, func() { logger.SetPath("") })
-}
+			restoreSharedLogger(t)
 
-func TestLogMethods(t *testing.T) {
-	defer removeLogFiles(DebugPath)
-	serviceName := "test-service"
-	logger, err := NewLogger(serviceName, DebugLevel)
-	if err != nil {
-		t.Errorf("error creating logger: %v", err)
-	}
-	logger.SetPath(DebugPath)
-	logger.Initialize()
+			log, err := mchlogtoolkitgo.NewLogger("set-path-service", mchlogtoolkitgo.DebugLevel)
+			assert.NoError(err)
 
-	levelFunctions := map[string]func(string){
-		DebugLevel: func(m string) { logger.Debug(m) },
-		InfoLevel:  func(m string) { logger.Info(m) },
-		WarnLevel:  func(m string) { logger.Warn(m) },
-		ErrorLevel: func(m string) { logger.Error(m) },
-		TestLevel:  func(m string) { logger.Test(m) },
-		FatalLevel: func(m string) { logger.Fatal(m) },
-	}
-
-	levels := []string{DebugLevel, InfoLevel, WarnLevel, ErrorLevel, TestLevel, FatalLevel}
-	messageLevel := map[string]string{
-		DebugLevel: "debug message",
-		InfoLevel:  "info message",
-		WarnLevel:  "warn message",
-		ErrorLevel: "error message",
-		TestLevel:  "test message",
-		FatalLevel: "fatal message",
-	}
-	for _, level := range levels {
-		t.Run(level, func(t *testing.T) {
-			if err = logger.SetLevel(level); err != nil {
-				t.Errorf("error setting level: %v", err)
+			if testCase.expectPanic {
+				assert.Panics(func() { log.SetPath(testCase.path) })
+				return
 			}
 
-			levelFunctions[level](messageLevel[level])
-			logPath := logger.log.GetFileNameFromStreamName(level)
-			if _, err = os.Stat(logPath); err != nil {
-				t.Errorf("error getting file info: %v", err)
-			}
+			assert.NotPanics(func() { log.SetPath(testCase.path) })
 
-			if err := os.Remove(logPath); err != nil {
-				t.Errorf("error removing file: %v", err)
-			}
-
-			differentLevel := InfoLevel
-			if level == InfoLevel || level == ErrorLevel {
-				differentLevel = DebugLevel
-			}
-
-			if err = logger.SetLevel(differentLevel); err != nil {
-				t.Errorf("error setting level: %v", err)
-			}
-
-			levelFunctions[level](messageLevel[level])
-			if _, err := os.Stat(logPath); err == nil {
-				t.Errorf("file should not exist")
-			}
+			log.Initialize()
+			assert.True(strings.HasPrefix(
+				mchlogcore.MchLog.GetFileNameFromStreamName("info"),
+				filepath.Join(testCase.path, "set-path-service")+string(filepath.Separator),
+			))
 		})
 	}
 }
 
-func TestInvalidMessages(t *testing.T) {
-	logger, err := NewLogger("test-service", DebugLevel)
-	if err != nil {
-		t.Errorf("error creating logger: %v", err)
+func TestInitialize(t *testing.T) {
+	assert, teardown := unittest.SetupTests(t)
+	defer teardown()
+
+	testCases := []struct {
+		name    string
+		service string
+	}{
+		{
+			name:    "Direciona os logs para o diretório do serviço",
+			service: "initialize-service",
+		},
+		{
+			name:    "Redireciona os logs ao ser chamado novamente com outro serviço",
+			service: "initialize-other-service",
+		},
 	}
 
-	logger.SetPath(DebugPath)
-	logger.Initialize()
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			teardownTestCase := unittest.SetupTestCase(t)
+			defer teardownTestCase(t)
 
-	levelFunctions := map[string]func(string){
-		DebugLevel: logger.Debug,
-		InfoLevel:  logger.Info,
-		WarnLevel:  logger.Warn,
-		ErrorLevel: logger.Error,
-		TestLevel:  logger.Test,
-		FatalLevel: logger.Fatal,
-	}
-	for level, levelMethod := range levelFunctions {
-		t.Run(level, func(t *testing.T) {
-			if err = logger.SetLevel(level); err != nil {
-				t.Errorf("error setting level: %v", err)
-			}
+			restoreSharedLogger(t)
 
-			assertPanic(t, func() { levelMethod("") })
+			basePath := t.TempDir() + "/"
+
+			log, err := mchlogtoolkitgo.NewLogger(testCase.service, mchlogtoolkitgo.DebugLevel)
+			assert.NoError(err)
+
+			log.SetPath(basePath)
+			log.Initialize()
+
+			log.Info("initialize message")
+
+			assert.FileExists(mchlogcore.MchLog.GetFileNameFromStreamName("info"))
+			assert.True(strings.HasPrefix(
+				mchlogcore.MchLog.GetFileNameFromStreamName("info"),
+				filepath.Join(basePath, testCase.service)+string(filepath.Separator),
+			))
 		})
 	}
 }
 
-func removeLogFiles(path string) {
-	err := os.RemoveAll(DebugPath)
-	if err != nil {
-		panic(err)
+func TestSetLevel(t *testing.T) {
+	assert, teardown := unittest.SetupTests(t)
+	defer teardown()
+
+	testCases := []struct {
+		name        string
+		level       string
+		expectedErr string
+	}{
+		{
+			name:  "Aceita o nível test",
+			level: mchlogtoolkitgo.TestLevel,
+		},
+		{
+			name:  "Aceita o nível debug",
+			level: mchlogtoolkitgo.DebugLevel,
+		},
+		{
+			name:  "Aceita o nível info",
+			level: mchlogtoolkitgo.InfoLevel,
+		},
+		{
+			name:  "Aceita o nível warn",
+			level: mchlogtoolkitgo.WarnLevel,
+		},
+		{
+			name:  "Aceita o nível error",
+			level: mchlogtoolkitgo.ErrorLevel,
+		},
+		{
+			name:  "Aceita o nível fatal",
+			level: mchlogtoolkitgo.FatalLevel,
+		},
+		{
+			name:  "Aceita o nível em caixa alta",
+			level: "WARN",
+		},
+		{
+			name:        "Rejeita o nível vazio",
+			level:       "",
+			expectedErr: "invalid log level",
+		},
+		{
+			name:        "Rejeita um nível desconhecido",
+			level:       "verbose",
+			expectedErr: "invalid log level",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			teardownTestCase := unittest.SetupTestCase(t)
+			defer teardownTestCase(t)
+
+			log, err := mchlogtoolkitgo.NewLogger("set-level-service", mchlogtoolkitgo.DebugLevel)
+			assert.NoError(err)
+
+			err = log.SetLevel(testCase.level)
+
+			if testCase.expectedErr != "" {
+				assert.EqualError(err, testCase.expectedErr)
+				return
+			}
+
+			assert.NoError(err)
+		})
 	}
 }
 
-func assertPanic(t *testing.T, f func()) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Errorf("panic was expected")
-		}
-	}()
-	f()
+func TestTest(t *testing.T) {
+	assert, teardown := unittest.SetupTests(t)
+	defer teardown()
+
+	testCases := []struct {
+		name         string
+		level        string
+		message      string
+		expectedLogs map[string][]string
+		expectPanic  bool
+	}{
+		{
+			name:    "Grava quando o nível é test",
+			level:   mchlogtoolkitgo.TestLevel,
+			message: "test message",
+			expectedLogs: map[string][]string{
+				"test": {"test message"},
+			},
+		},
+		{
+			name:         "Não grava quando o nível é debug",
+			level:        mchlogtoolkitgo.DebugLevel,
+			message:      "test message",
+			expectedLogs: map[string][]string{},
+		},
+		{
+			name:         "Não grava quando o nível é info",
+			level:        mchlogtoolkitgo.InfoLevel,
+			message:      "test message",
+			expectedLogs: map[string][]string{},
+		},
+		{
+			name:        "Entra em panic com mensagem vazia",
+			level:       mchlogtoolkitgo.TestLevel,
+			message:     "",
+			expectPanic: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			teardownTestCase := unittest.SetupTestCase(t)
+			defer teardownTestCase(t)
+
+			restoreSharedLogger(t)
+			assert.NoError(logger.Logger.SetLevel(testCase.level))
+
+			if testCase.expectPanic {
+				assert.Panics(func() { logger.Logger.Test(testCase.message) })
+				return
+			}
+
+			logger.Logger.Test(testCase.message)
+			unittest.CompareLogs(t, assert, testCase.expectedLogs)
+		})
+	}
 }
 
-func TestFormatLogWithValidInput(t *testing.T) {
-	message := "test message"
-	level := DebugLevel
+func TestDebug(t *testing.T) {
+	assert, teardown := unittest.SetupTests(t)
+	defer teardown()
 
-	result := formatLog(message, level)
-
-	if result == nil {
-		t.Errorf("Expected byte array, got nil")
+	testCases := []struct {
+		name         string
+		level        string
+		message      string
+		expectedLogs map[string][]string
+		expectPanic  bool
+	}{
+		{
+			name:    "Grava quando o nível é debug",
+			level:   mchlogtoolkitgo.DebugLevel,
+			message: "debug message",
+			expectedLogs: map[string][]string{
+				"debug": {"debug message"},
+			},
+		},
+		{
+			name:         "Não grava quando o nível é info",
+			level:        mchlogtoolkitgo.InfoLevel,
+			message:      "debug message",
+			expectedLogs: map[string][]string{},
+		},
+		{
+			name:         "Não grava quando o nível é error",
+			level:        mchlogtoolkitgo.ErrorLevel,
+			message:      "debug message",
+			expectedLogs: map[string][]string{},
+		},
+		{
+			name:        "Entra em panic com mensagem vazia",
+			level:       mchlogtoolkitgo.DebugLevel,
+			message:     "",
+			expectPanic: true,
+		},
 	}
 
-	var log map[string]string
-	err := json.Unmarshal(result, &log)
-	if err != nil {
-		t.Errorf("Error unmarshalling result: %v", err)
-	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			teardownTestCase := unittest.SetupTestCase(t)
+			defer teardownTestCase(t)
 
-	if log["message"] != message {
-		t.Errorf("Expected message %s, got %s", message, log["message"])
-	}
+			restoreSharedLogger(t)
+			assert.NoError(logger.Logger.SetLevel(testCase.level))
 
-	if log["level"] != level {
-		t.Errorf("Expected level %s, got %s", level, log["level"])
+			if testCase.expectPanic {
+				assert.Panics(func() { logger.Logger.Debug(testCase.message) })
+				return
+			}
+
+			logger.Logger.Debug(testCase.message)
+			unittest.CompareLogs(t, assert, testCase.expectedLogs)
+		})
 	}
 }
 
-func TestFormatLogWithInvalidInput(t *testing.T) {
-	message := ""
-	level := ""
+func TestWarn(t *testing.T) {
+	assert, teardown := unittest.SetupTests(t)
+	defer teardown()
 
-	result := formatLog(message, level)
+	testCases := []struct {
+		name         string
+		level        string
+		message      string
+		expectedLogs map[string][]string
+		expectPanic  bool
+	}{
+		{
+			name:    "Grava quando o nível é warn",
+			level:   mchlogtoolkitgo.WarnLevel,
+			message: "warn message",
+			expectedLogs: map[string][]string{
+				"warn": {"warn message"},
+			},
+		},
+		{
+			name:    "Grava quando o nível é debug",
+			level:   mchlogtoolkitgo.DebugLevel,
+			message: "warn message",
+			expectedLogs: map[string][]string{
+				"warn": {"warn message"},
+			},
+		},
+		{
+			name:         "Não grava quando o nível é info",
+			level:        mchlogtoolkitgo.InfoLevel,
+			message:      "warn message",
+			expectedLogs: map[string][]string{},
+		},
+		{
+			name:        "Entra em panic com mensagem vazia",
+			level:       mchlogtoolkitgo.WarnLevel,
+			message:     "",
+			expectPanic: true,
+		},
+	}
 
-	if result != nil {
-		t.Errorf("Expected nil, got byte array")
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			teardownTestCase := unittest.SetupTestCase(t)
+			defer teardownTestCase(t)
+
+			restoreSharedLogger(t)
+			assert.NoError(logger.Logger.SetLevel(testCase.level))
+
+			if testCase.expectPanic {
+				assert.Panics(func() { logger.Logger.Warn(testCase.message) })
+				return
+			}
+
+			logger.Logger.Warn(testCase.message)
+			unittest.CompareLogs(t, assert, testCase.expectedLogs)
+		})
+	}
+}
+
+func TestInfo(t *testing.T) {
+	assert, teardown := unittest.SetupTests(t)
+	defer teardown()
+
+	testCases := []struct {
+		name         string
+		level        string
+		message      string
+		expectedLogs map[string][]string
+		expectPanic  bool
+	}{
+		{
+			name:    "Grava quando o nível é info",
+			level:   mchlogtoolkitgo.InfoLevel,
+			message: "info message",
+			expectedLogs: map[string][]string{
+				"info": {"info message"},
+			},
+		},
+		{
+			name:    "Grava mesmo quando o nível é error",
+			level:   mchlogtoolkitgo.ErrorLevel,
+			message: "info message",
+			expectedLogs: map[string][]string{
+				"info": {"info message"},
+			},
+		},
+		{
+			name:    "Grava várias mensagens em sequência",
+			level:   mchlogtoolkitgo.InfoLevel,
+			message: "info message",
+			expectedLogs: map[string][]string{
+				"info": {"info message"},
+			},
+		},
+		{
+			name:        "Entra em panic com mensagem vazia",
+			level:       mchlogtoolkitgo.InfoLevel,
+			message:     "",
+			expectPanic: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			teardownTestCase := unittest.SetupTestCase(t)
+			defer teardownTestCase(t)
+
+			restoreSharedLogger(t)
+			assert.NoError(logger.Logger.SetLevel(testCase.level))
+
+			if testCase.expectPanic {
+				assert.Panics(func() { logger.Logger.Info(testCase.message) })
+				return
+			}
+
+			logger.Logger.Info(testCase.message)
+			unittest.CompareLogs(t, assert, testCase.expectedLogs)
+		})
+	}
+}
+
+func TestError(t *testing.T) {
+	assert, teardown := unittest.SetupTests(t)
+	defer teardown()
+
+	testCases := []struct {
+		name         string
+		level        string
+		message      string
+		expectedLogs map[string][]string
+		expectPanic  bool
+	}{
+		{
+			name:    "Grava quando o nível é error",
+			level:   mchlogtoolkitgo.ErrorLevel,
+			message: "error message",
+			expectedLogs: map[string][]string{
+				"error": {"error message"},
+			},
+		},
+		{
+			name:    "Grava mesmo quando o nível é info",
+			level:   mchlogtoolkitgo.InfoLevel,
+			message: "error message",
+			expectedLogs: map[string][]string{
+				"error": {"error message"},
+			},
+		},
+		{
+			name:        "Entra em panic com mensagem vazia",
+			level:       mchlogtoolkitgo.ErrorLevel,
+			message:     "",
+			expectPanic: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			teardownTestCase := unittest.SetupTestCase(t)
+			defer teardownTestCase(t)
+
+			restoreSharedLogger(t)
+			assert.NoError(logger.Logger.SetLevel(testCase.level))
+
+			if testCase.expectPanic {
+				assert.Panics(func() { logger.Logger.Error(testCase.message) })
+				return
+			}
+
+			logger.Logger.Error(testCase.message)
+			unittest.CompareLogs(t, assert, testCase.expectedLogs)
+		})
+	}
+}
+
+func TestFatal(t *testing.T) {
+	assert, teardown := unittest.SetupTests(t)
+	defer teardown()
+
+	testCases := []struct {
+		name         string
+		level        string
+		message      string
+		expectedLogs map[string][]string
+		expectPanic  bool
+	}{
+		{
+			name:    "Grava quando o nível é fatal",
+			level:   mchlogtoolkitgo.FatalLevel,
+			message: "fatal message",
+			expectedLogs: map[string][]string{
+				"fatal": {"fatal message"},
+			},
+		},
+		{
+			name:    "Grava mesmo quando o nível é debug",
+			level:   mchlogtoolkitgo.DebugLevel,
+			message: "fatal message",
+			expectedLogs: map[string][]string{
+				"fatal": {"fatal message"},
+			},
+		},
+		{
+			name:        "Entra em panic com mensagem vazia",
+			level:       mchlogtoolkitgo.FatalLevel,
+			message:     "",
+			expectPanic: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			teardownTestCase := unittest.SetupTestCase(t)
+			defer teardownTestCase(t)
+
+			restoreSharedLogger(t)
+			assert.NoError(logger.Logger.SetLevel(testCase.level))
+
+			if testCase.expectPanic {
+				assert.Panics(func() { logger.Logger.Fatal(testCase.message) })
+				return
+			}
+
+			logger.Logger.Fatal(testCase.message)
+			unittest.CompareLogs(t, assert, testCase.expectedLogs)
+		})
 	}
 }
