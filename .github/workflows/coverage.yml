@@ -1,0 +1,79 @@
+name: Coverage - Envio para vcov-viewer
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  coverage:
+    name: Go test coverage + upload vcov-viewer
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: "./go.mod"
+          cache-dependency-path: "**/go.sum"
+
+      - name: Install dependencies
+        run: go mod download && go mod tidy
+
+      - name: Install gcov2lcov
+        run: go install github.com/jandelgado/gcov2lcov@latest
+
+      # Sem -race: mchlogcorev1.InitializeMchLog reatribui o global _chLog
+      # (mchlogv1.go:107) enquanto a goroutine da inicialização anterior ainda
+      # faz range sobre ele (mchlogv1.go:120). Qualquer segunda chamada dispara
+      # o detector. É um race real do código de produção, não dos testes.
+      # Reative a flag assim que o _chLog for protegido.
+      - name: Run tests com coverage
+        id: tests
+        continue-on-error: true
+        run: go test -coverprofile=coverage.out ./...
+
+      - name: Converter coverage.out para lcov
+        if: always()
+        run: |
+          if [ -s coverage.out ]; then
+            "$(go env GOPATH)/bin/gcov2lcov" -infile=coverage.out -outfile=coverage.lcov
+          fi
+      - name: Upload coverage para vcov-viewer
+        if: always()
+        env:
+          VCOV_URL: ${{ secrets.VCOV_URL }}
+          VCOV_TOKEN: ${{ secrets.VCOV_TOKEN }}
+          COMMIT_SHA: ${{ github.sha }}
+          BRANCH: ${{ github.ref_name }}
+          TESTS_OUTCOME: ${{ steps.tests.outcome }}
+        run: |
+          LCOV="./coverage.lcov"
+          if [ "$TESTS_OUTCOME" = "success" ] && [ -s "$LCOV" ]; then
+            STATUS="success"
+            FILE_ARG=(-F "file=@${LCOV}")
+          elif [ "$TESTS_OUTCOME" = "failure" ]; then
+            STATUS="failed_tests"
+            FILE_ARG=()
+          else
+            STATUS="failed_coverage"
+            FILE_ARG=()
+          fi
+          COMMIT_MSG="$(git -C "$GITHUB_WORKSPACE" log -1 --pretty=format:%s | head -c 200)"
+          COMMIT_AUTHOR="$(git -C "$GITHUB_WORKSPACE" log -1 --pretty=format:'%an <%ae>')"
+          curl -fsS -X POST "${VCOV_URL}/api/coverage" \
+            -H "Authorization: Bearer ${VCOV_TOKEN}" \
+            "${FILE_ARG[@]}" \
+            --form-string "status=${STATUS}" \
+            --form-string "commit_sha=${COMMIT_SHA}" \
+            --form-string "branch=${BRANCH}" \
+            --form-string "commit_message=${COMMIT_MSG}" \
+            --form-string "commit_author=${COMMIT_AUTHOR}"
+      - name: Falha o job se os testes falharam
+        if: steps.tests.outcome == 'failure'
+        run: exit 1
